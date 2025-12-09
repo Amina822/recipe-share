@@ -1,0 +1,458 @@
+/* ============= Global Styles ============= */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: 'Inter', sans-serif;
+    background: linear-gradient(135deg, #fef5e7 0%, #fce4ec 50%, #e8f5e9 100%);
+    background-attachment: fixed;
+    color: #2c2c2c;
+    padding: 20px;
+    min-height: 100vh;
+}
+
+h1, h2, h3 {
+    font-family: "Georgia", serif;
+}
+
+.container {
+    max-width: 1350px;
+    margin: 0 auto;
+}
+
+/* ============= Navigation ============= */
+.nav-bar {
+    display: flex;
+    gap: 28px;
+}
+
+.nav-bar a {
+    text-decoration: none;
+    font-weight: 500;
+    color: #444;
+    font-size: 1rem;
+    transition: 0.25s ease;
+}
+
+.nav-bar a:hover {
+    color: #ee5a24;
+    transform: translateY(-2px);
+}
+
+/* ============= Header ============= */
+header {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    padding: 25px 40px;
+    border-radius: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+    margin-bottom: 20px;
+}
+
+.left-section {
+    display: flex;
+    align-items: center;
+    gap: 50px;
+}
+
+.brand h1 {
+    margin-bottom: 4px;
+    background: linear-gradient(135deg, #ff6b6b, #ee5a24, #fd79a8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-size: 2em;
+}
+
+.brand p {
+    margin-top: -2px;
+}
+
+.user-info {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 25px;
+    font-size: 0.95em;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.auth-buttons {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.login-btn, .signup-btn, .logout-btn {
+    padding: 10px 24px;
+    border-radius: 25px;
+    border: none;
+    cursor: pointer;
+    font-weight: 500;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.login-btn {
+    background: white;
+    color: #667eea;
+    border: 2px solid #667eea;
+}
+
+.login-btn:hover {
+    background: #f8f9ff;
+    transform: translateY(-2px);
+}
+
+.signup-btn, .logout-btn {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.signup-btn:hover, .logout-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+}
+
+/* ============= Hero ============= */
+.hero {
+    display: flex;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(230, 230, 230, 0.5);
+    border-radius: 20px;
+    overflow: hidden;
+    margin-bottom: 40px;
+    cursor: pointer;
+    transition: all 0.4s ease;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+}
+
+.hero:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.12);
+}
+
+.hero-image {
+    width: 50%;
+    height: 380px;
+    object-fit: cover;
+    transition: transform 0.4s ease;
+}
+
+.hero:hover .hero-image {
+    transform: scale(1.05);
+}
+
+.hero-content {
+    width: 50%;
+    padding: 40px;
+}
+
+.hero-title {
+    font-size: 2.2em;
+    margin-bottom: 15px;
+    background: linear-gradient(135deg, #2c3e50, #e74c3c);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.hero-meta {
+    color: #555;
+    margin-bottom: 25px;
+    font-size: 1.05em;
+}
+
+.hero-btn {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+    padding: 14px 28px;
+    border-radius: 30px;
+    display: inline-block;
+    font-weight: 500;
+    transition: all 0.3s;
+}
+
+.hero-btn:hover {
+    transform: translateX(5px);
+    box-shadow: 0 5px 20px rgba(245, 87, 108, 0.4);
+}
+
+/* ============= Controls ============= */
+.controls {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(230, 230, 230, 0.5);
+    padding: 25px;
+    border-radius: 16px;
+    margin-bottom: 40px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+}
+
+.search-filter-bar {
+    display: flex;
+    gap: 15px;
+}
+
+.search-box {
+    flex: 2;
+}
+
+#categoryFilter,
+#timeFilter {
+    max-width: 180px;
+}
+
+.search-box input, select {
+    padding: 14px 20px;
+    border: 2px solid #e9ecef;
+    border-radius: 12px;
+    width: 100%;
+    transition: all 0.3s;
+    background: white;
+}
+
+.search-box input:focus, select:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 14px 28px;
+    border-radius: 12px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.3s;
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+}
+
+/* ============= Recipe Grid ============= */
+.recipe-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+    gap: 28px;
+}
+
+.recipe-card {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(230, 230, 230, 0.5);
+    border-radius: 16px;
+    overflow: hidden;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+}
+
+.recipe-card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+}
+
+.recipe-image {
+    width: 100%;
+    height: 200px;
+    object-fit: cover;
+    cursor: pointer;
+    transition: transform 0.3s ease;
+}
+
+.recipe-card:hover .recipe-image {
+    transform: scale(1.08);
+}
+
+.recipe-content {
+    padding: 20px;
+}
+
+.recipe-title {
+    font-family: Georgia, serif;
+    cursor: pointer;
+    margin-bottom: 8px;
+    font-size: 1.3em;
+    color: #2c3e50;
+    transition: color 0.2s;
+}
+
+.recipe-title:hover {
+    color: #e74c3c;
+}
+
+.recipe-category {
+    background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+    padding: 5px 14px;
+    font-size: 0.85em;
+    border-radius: 50px;
+    display: inline-block;
+    margin-bottom: 12px;
+    font-weight: 500;
+}
+
+.recipe-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.action-btn {
+    flex: 1;
+    border: 2px solid #e9ecef;
+    padding: 8px 10px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 0.9em;
+    background: white;
+    transition: all 0.2s;
+    font-weight: 500;
+    min-width: 70px;
+}
+
+.action-btn:hover {
+    border-color: #667eea;
+    color: #667eea;
+    transform: translateY(-2px);
+}
+
+.like-btn.liked {
+    background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+    color: white;
+    border: none;
+}
+
+.like-btn.liked:hover {
+    background: linear-gradient(135deg, #ee5a24, #d63031);
+}
+
+/* ============= Modals ============= */
+.modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(5px);
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+    z-index: 2000;
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.modal.active {
+    display: flex;
+}
+
+.modal-content {
+    background: white;
+    padding: 24px 28px;
+    border-radius: 20px;
+    max-width: 800px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+    from { 
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to { 
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.modal-content h2 {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.modal-content input,
+.modal-content textarea,
+.modal-content select {
+    border: 2px solid #e9ecef;
+    border-radius: 10px;
+    transition: all 0.3s;
+}
+
+.modal-content input:focus,
+.modal-content textarea:focus,
+.modal-content select:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.modal-content button {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-weight: 500;
+    transition: all 0.3s;
+}
+
+.modal-content button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+}
+/* Hide hero section */
+#heroSection {
+    display: none;
+}
+.fav-btn {
+    font-size: 18px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 6px 10px;
+}
+.fav-btn:hover {
+    transform: scale(1.1);
+}
+.recipe-image-wrapper {
+    position: relative;
+}
+
+.fav-btn {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: white;
+    border: none;
+    font-size: 22px;
+    cursor: pointer;
+    border-radius: 50%;
+    padding: 6px 9px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    transition: transform .15s ease;
+}
+
+.fav-btn:hover {
+    transform: scale(1.15);
+}
+
+.fav-btn.active {
+    color: red;
+}

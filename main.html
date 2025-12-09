@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pocket Chef – Modern Minimal Recipes</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Georgia&display=swap" rel="stylesheet">
+
+    <!-- REQUIRED FOR STARS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="container">
+    <!-- HEADER -->
+    <header>
+        <div class="left-section">
+            <div class="brand">
+                <h1>Pocket Chef</h1>
+                <p>Prep less, impress more.</p>
+            </div>
+
+            <nav class="nav-bar">
+                <a href="#">Home</a>
+                <a href="#">Categories</a>
+                <a href="#" onclick="showFavorites()">Favorites</a>
+                <a href="#">My Recipes</a>
+                <a href="#">About</a>
+            </nav>
+        </div>
+
+        <div id="authArea"></div>
+    </header>
+
+    <!-- CONTROLS -->
+    <div class="controls">
+        <div class="search-filter-bar">
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="Search recipes...">
+            </div>
+
+            <select id="categoryFilter">
+                <option value="">All Categories</option>
+                <option>Vegetarian</option>
+                <option>Dessert</option>
+                <option>Quick</option>
+                <option>Main Course</option>
+                <option>Breakfast</option>
+            </select>
+
+            <select id="timeFilter">
+                <option value="">Any Time</option>
+                <option value="15">Under 15 min</option>
+                <option value="30">Under 30 min</option>
+                <option value="60">Under 1 hour</option>
+            </select>
+
+            <button class="btn-primary" id="addRecipeBtn" onclick="openUploadModal()">+ Add Recipe</button>
+        </div>
+    </div>
+
+    <!-- HERO -->
+    <div id="heroSection"></div>
+
+    <!-- RECIPE GRID -->
+    <div class="recipe-grid" id="recipeGrid"></div>
+</div>
+
+<!-- DETAIL MODAL -->
+<div class="modal" id="detailModal">
+    <div class="modal-content" id="detailContent">
+
+        <!-- ⭐ ADDED STAR RATING SECTION -->
+        <div class="rating-box">
+            <div class="rating-stars">
+                <i class="star fa-solid fa-star" data-value="1"></i>
+                <i class="star fa-solid fa-star" data-value="2"></i>
+                <i class="star fa-solid fa-star" data-value="3"></i>
+                <i class="star fa-solid fa-star" data-value="4"></i>
+                <i class="star fa-solid fa-star" data-value="5"></i>
+            </div>
+            <span class="rating-label">Rating</span>
+        </div>
+
+    </div>
+</div>
+
+<!-- UPLOAD MODAL -->
+<div class="modal" id="uploadModal">
+    <div class="modal-content" id="uploadContent"></div>
+</div>
+
+<!-- LOGIN MODAL -->
+<div class="modal" id="loginModal">
+    <div class="modal-content" id="loginContent"></div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
