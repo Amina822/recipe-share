@@ -1,140 +1,367 @@
 /*****************
- * CONFIG — BACKEND URL
+ * CONFIGURATION
  *****************/
-// For local development
-const API = "http://localhost:5000";
+const API_URL = 'http://localhost:5000';
+let currentUser = JSON.parse(localStorage.getItem("currentUser")) || null;
+let recipes = [];
+let likedRecipes = new Set();
+let activeFilters = new Set(['all']);
+let currentRecipeId = null;
+let currentView = 'home';
 
-// For production (uncomment when deployed)
-// const API = "https://recipe-backend-2qex.onrender.com";
+/*****************
+ * API FUNCTIONS
+ *****************/
+async function fetchRecipes() {
+    try {
+        const response = await fetch(`${API_URL}/recipes`);
+        if (!response.ok) throw new Error('Failed to fetch recipes');
+        recipes = await response.json();
+        return recipes;
+    } catch (error) {
+        console.error('Error fetching recipes:', error);
+        showToast("Error loading recipes. Using sample data.", "error");
+        return [];
+    }
+}
+
+async function addRecipeAPI(recipeData) {
+    try {
+        const response = await fetch(`${API_URL}/recipes`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(recipeData)
+        });
+        
+        if (!response.ok) throw new Error('Failed to add recipe');
+        return await response.json();
+    } catch (error) {
+        console.error('Error adding recipe:', error);
+        throw error;
+    }
+}
+
+async function updateRecipeAPI(recipeId, recipeData) {
+    try {
+        const response = await fetch(`${API_URL}/recipes/${recipeId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(recipeData)
+        });
+        
+        if (!response.ok) throw new Error('Failed to update recipe');
+        return await response.json();
+    } catch (error) {
+        console.error('Error updating recipe:', error);
+        throw error;
+    }
+}
+
+async function deleteRecipeAPI(recipeId) {
+    try {
+        const response = await fetch(`${API_URL}/recipes/${recipeId}`, {
+            method: 'DELETE'
+        });
+        
+        if (!response.ok) throw new Error('Failed to delete recipe');
+        return await response.json();
+    } catch (error) {
+        console.error('Error deleting recipe:', error);
+        throw error;
+    }
+}
+
+async function likeRecipeAPI(recipeId) {
+    try {
+        const response = await fetch(`${API_URL}/recipes/${recipeId}/like`, {
+            method: 'POST'
+        });
+        
+        if (!response.ok) throw new Error('Failed to like recipe');
+        return await response.json();
+    } catch (error) {
+        console.error('Error liking recipe:', error);
+        throw error;
+    }
+}
+
+async function registerAPI(userData) {
+    try {
+        const response = await fetch(`${API_URL}/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(userData)
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Registration failed');
+        }
+        
+        return await response.json();
+    } catch (error) {
+        console.error('Error registering:', error);
+        throw error;
+    }
+}
+
+async function loginAPI(credentials) {
+    try {
+        const response = await fetch(`${API_URL}/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(credentials)
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Login failed');
+        }
+        
+        return await response.json();
+    } catch (error) {
+        console.error('Error logging in:', error);
+        throw error;
+    }
+}
+
+async function fetchComments(recipeId) {
+    try {
+        const response = await fetch(`${API_URL}/comments/${recipeId}`);
+        if (!response.ok) throw new Error('Failed to fetch comments');
+        return await response.json();
+    } catch (error) {
+        console.error('Error fetching comments:', error);
+        return [];
+    }
+}
+
+async function addCommentAPI(recipeId, commentData) {
+    try {
+        const response = await fetch(`${API_URL}/comments/${recipeId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(commentData)
+        });
+        
+        if (!response.ok) throw new Error('Failed to add comment');
+        return await response.json();
+    } catch (error) {
+        console.error('Error adding comment:', error);
+        throw error;
+    }
+}
+
+/*****************
+ * INITIALIZATION
+ *****************/
+document.addEventListener('DOMContentLoaded', () => {
+    // Setup event listeners
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        searchInput.addEventListener('input', () => {
+            if (currentView === 'home') {
+                renderRecipes();
+            }
+        });
+    }
+    
+    document.getElementById('recipeForm')?.addEventListener('submit', submitRecipe);
+    document.getElementById('loginForm')?.addEventListener('submit', handleLogin);
+    document.getElementById('signupForm')?.addEventListener('submit', handleSignup);
+    
+    // Modal close on backdrop click
+    document.querySelectorAll('.modal').forEach(modal => {
+        modal.addEventListener('click', function(e) {
+            if (e.target === this) {
+                this.classList.remove('active');
+                document.body.style.overflow = 'auto';
+            }
+        });
+    });
+    
+    // Initialize
+    updateAuthArea();
+    updateActiveFilterTags();
+    loadRecipes();
+    showHome();
+});
 
 /*****************
  * USER SYSTEM
  *****************/
-let currentUser = JSON.parse(localStorage.getItem("currentUser")) || null;
-let recipes = [];
-
 function updateAuthArea() {
     const area = document.getElementById("authArea");
-    const addBtn = document.getElementById("addRecipeBtn");
-
+    
     if (!currentUser) {
         area.innerHTML = `
             <div class="auth-buttons">
-                <button class="login-btn" onclick="openLoginModal()">Login</button>
-                <button class="signup-btn" onclick="openSignupModal()">Sign Up</button>
+                <button class="auth-btn login" onclick="openLoginModal()">
+                    <i class="fas fa-sign-in-alt"></i>
+                    Login
+                </button>
+                <button class="auth-btn signup" onclick="openSignupModal()">
+                    <i class="fas fa-user-plus"></i>
+                    Sign Up
+                </button>
             </div>
         `;
-        if (addBtn) addBtn.style.display = "none";
     } else {
         area.innerHTML = `
             <div class="user-info">
-                👤 ${currentUser.username} — ${currentUser.role}
-                <button class="logout-btn" onclick="logout()">Logout</button>
+                <div class="user-avatar">${currentUser.username.charAt(0).toUpperCase()}</div>
+                <div class="user-details">
+                    <span class="username">${currentUser.username}</span>
+                    <span class="user-role">${currentUser.role}</span>
+                </div>
+                <button class="logout-btn" onclick="logout()">
+                    <i class="fas fa-sign-out-alt"></i>
+                    Logout
+                </button>
             </div>
         `;
-        if (addBtn) addBtn.style.display = "inline-block";
+    }
+    
+    // Update add recipe button
+    const addBtn = document.getElementById("addRecipeBtn");
+    if (addBtn) {
+        addBtn.style.display = currentUser ? "inline-flex" : "none";
     }
 }
 
 /*****************
- * LOGIN / REGISTER MODALS
+ * LOGIN/SIGNUP MODALS
  *****************/
 function openLoginModal() {
     const modal = document.getElementById("loginModal");
-    const box = document.getElementById("loginContent");
-
-    box.innerHTML = `
-        <h2 style="font-family:Georgia;margin-bottom:20px">Login</h2>
-        <input id="loginUser" placeholder="Username" style="width:100%;padding:12px;margin-bottom:15px">
-        <input id="loginPass" type="password" placeholder="Password" style="width:100%;padding:12px;margin-bottom:20px">
-        <button onclick="doLogin()" style="padding:12px 24px;cursor:pointer">Login</button>
-        <button onclick="closeModal('loginModal')" style="padding:12px 24px;margin-left:10px;cursor:pointer;background:#e9ecef;color:#333">Cancel</button>
-        <p style="margin-top:20px;color:#777;font-size:0.9em">
-            Don't have an account? <span style="color:#667eea;cursor:pointer;font-weight:500" onclick="openSignupModal()">Sign Up</span>
-        </p>
-    `;
-
     modal.classList.add("active");
     document.body.style.overflow = "hidden";
+    switchAuthTab('login');
 }
 
 function openSignupModal() {
     const modal = document.getElementById("loginModal");
-    const box = document.getElementById("loginContent");
-
-    box.innerHTML = `
-        <h2 style="font-family:Georgia;margin-bottom:20px">Sign Up</h2>
-        <input id="regUser" placeholder="Username (min 3 chars)" style="width:100%;padding:12px;margin-bottom:15px">
-        <input id="regPass" type="password" placeholder="Password (min 6 chars)" style="width:100%;padding:12px;margin-bottom:15px">
-        <input id="regPass2" type="password" placeholder="Confirm Password" style="width:100%;padding:12px;margin-bottom:20px">
-        <button onclick="doRegister()" style="padding:12px 24px;cursor:pointer">Create Account</button>
-        <button onclick="closeModal('loginModal')" style="padding:12px 24px;margin-left:10px;cursor:pointer;background:#e9ecef;color:#333">Cancel</button>
-        <p style="margin-top:20px;color:#777;font-size:0.9em">
-            Already have an account? <span style="color:#667eea;cursor:pointer;font-weight:500" onclick="openLoginModal()">Login</span>
-        </p>
-    `;
-
     modal.classList.add("active");
     document.body.style.overflow = "hidden";
+    switchAuthTab('signup');
 }
 
-async function doLogin() {
-    const username = document.getElementById("loginUser").value.trim();
-    const password = document.getElementById("loginPass").value.trim();
+function closeLoginModal() {
+    const modal = document.getElementById("loginModal");
+    modal.classList.remove("active");
+    document.body.style.overflow = "auto";
+}
 
-    if (!username || !password) return alert("Fill all fields");
+function switchAuthTab(tab) {
+    const loginForm = document.getElementById("loginForm");
+    const signupForm = document.getElementById("signupForm");
+    const tabs = document.querySelectorAll(".auth-tab");
+    const modalTitle = document.getElementById("loginModalTitle");
+    
+    tabs.forEach(t => t.classList.remove("active"));
+    document.querySelectorAll(".auth-tab").forEach(btn => {
+        if (btn.textContent.includes(tab === 'login' ? 'Login' : 'Sign Up')) {
+            btn.classList.add("active");
+        }
+    });
+    
+    if (tab === 'login') {
+        loginForm.style.display = "block";
+        signupForm.style.display = "none";
+        modalTitle.textContent = "Login";
+    } else {
+        loginForm.style.display = "none";
+        signupForm.style.display = "block";
+        modalTitle.textContent = "Sign Up";
+    }
+}
 
+async function handleLogin(event) {
+    event.preventDefault();
+    
+    const username = document.getElementById("loginUsername").value.trim();
+    const password = document.getElementById("loginPassword").value.trim();
+    
+    if (!username || !password) {
+        showToast("Please fill in all fields", "error");
+        return;
+    }
+    
     try {
-        let response = await fetch(`${API}/login`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username, password })
-        });
-
-        let data = await response.json();
-        if (data.error) return alert("Invalid username or password");
-
-        currentUser = data.user;
+        const result = await loginAPI({ username, password });
+        
+        currentUser = {
+            id: result.user.id,
+            username: result.user.username,
+            role: result.user.role,
+            favorites: []
+        };
+        
         localStorage.setItem("currentUser", JSON.stringify(currentUser));
-
-        closeModal("loginModal");
+        
+        closeLoginModal();
         updateAuthArea();
         loadRecipes();
-        alert(`Welcome back, ${username}!`);
+        showToast(`Welcome back, ${username}!`);
+        
+        // Clear form
+        document.getElementById("loginUsername").value = "";
+        document.getElementById("loginPassword").value = "";
     } catch (error) {
-        alert("Connection error. Make sure the backend is running.");
+        showToast(error.message || "Login failed. Please try again.", "error");
         console.error(error);
     }
 }
 
-async function doRegister() {
-    const username = document.getElementById("regUser").value.trim();
-    const pass = document.getElementById("regPass").value.trim();
-    const pass2 = document.getElementById("regPass2").value.trim();
-
-    if (username.length < 3) return alert("Username must be ≥ 3 chars");
-    if (pass.length < 6) return alert("Password must be ≥ 6 chars");
-    if (pass !== pass2) return alert("Passwords do not match");
-
+async function handleSignup(event) {
+    event.preventDefault();
+    
+    const username = document.getElementById("signupUsername").value.trim();
+    const password = document.getElementById("signupPassword").value.trim();
+    const confirmPassword = document.getElementById("signupConfirmPassword").value.trim();
+    
+    if (username.length < 3) {
+        showToast("Username must be at least 3 characters", "error");
+        return;
+    }
+    
+    if (password.length < 6) {
+        showToast("Password must be at least 6 characters", "error");
+        return;
+    }
+    
+    if (password !== confirmPassword) {
+        showToast("Passwords do not match", "error");
+        return;
+    }
+    
     try {
-        let response = await fetch(`${API}/register`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username, password: pass, role: "user" })
+        const result = await registerAPI({ 
+            username, 
+            password,
+            role: "user" 
         });
-
-        let data = await response.json();
-        if (data.error) return alert("Username already taken");
-
-        currentUser = data.user;
+        
+        currentUser = {
+            id: result.user.id,
+            username: result.user.username,
+            role: result.user.role,
+            favorites: []
+        };
+        
         localStorage.setItem("currentUser", JSON.stringify(currentUser));
-
-        closeModal("loginModal");
+        
+        closeLoginModal();
         updateAuthArea();
         loadRecipes();
-        alert(`Account created! Welcome, ${username}!`);
+        showToast(`Account created! Welcome, ${username}!`);
+        
+        // Clear form
+        document.getElementById("signupUsername").value = "";
+        document.getElementById("signupPassword").value = "";
+        document.getElementById("signupConfirmPassword").value = "";
     } catch (error) {
-        alert("Connection error. Make sure the backend is running.");
+        showToast(error.message || "Registration failed. Please try again.", "error");
         console.error(error);
     }
 }
@@ -144,462 +371,895 @@ function logout() {
     currentUser = null;
     updateAuthArea();
     loadRecipes();
-    alert("Logged out successfully");
-}
-
-function closeModal(modalId) {
-    document.getElementById(modalId).classList.remove("active");
-    document.body.style.overflow = "auto";
+    showToast("Logged out successfully");
 }
 
 /*****************
- * LOAD RECIPES
+ * VIEW MANAGEMENT
+ *****************/
+function showHome() {
+    currentView = 'home';
+    updateNavigation('Home');
+    showView('homeView');
+    loadRecipes();
+}
+
+function showCategories() {
+    currentView = 'categories';
+    updateNavigation('Categories');
+    showView('categoriesView');
+    renderCategories();
+}
+
+function showFavorites() {
+    if (!currentUser) {
+        showToast("Please login to view favorites", "error");
+        openLoginModal();
+        return;
+    }
+    
+    currentView = 'favorites';
+    updateNavigation('Favorites');
+    showView('favoritesView');
+    renderFavorites();
+}
+
+function showMyRecipes() {
+    if (!currentUser) {
+        showToast("Please login to view your recipes", "error");
+        openLoginModal();
+        return;
+    }
+    
+    currentView = 'myRecipes';
+    updateNavigation('My Recipes');
+    showView('myRecipesView');
+    renderMyRecipes();
+}
+
+function showAbout() {
+    currentView = 'about';
+    updateNavigation('About');
+    showView('aboutView');
+}
+
+function updateNavigation(activeLink) {
+    const navLinks = document.querySelectorAll('.nav-link');
+    navLinks.forEach(link => {
+        link.classList.remove('active');
+        if (link.querySelector('.nav-text')?.textContent === activeLink) {
+            link.classList.add('active');
+        }
+    });
+}
+
+function showView(viewId) {
+    const views = ['homeView', 'categoriesView', 'favoritesView', 'myRecipesView', 'aboutView'];
+    views.forEach(view => {
+        const element = document.getElementById(view);
+        if (element) {
+            element.classList.remove('active');
+        }
+    });
+    
+    const activeView = document.getElementById(viewId);
+    if (activeView) {
+        activeView.classList.add('active');
+    }
+}
+
+/*****************
+ * QUICK FILTERS
+ *****************/
+function toggleQuickFilter(filterType) {
+    const quickFilters = document.querySelectorAll('.quick-filter');
+    quickFilters.forEach(filter => filter.classList.remove('active'));
+    
+    const filterNames = {
+        'all': 'All',
+        'vegetarian': 'Vegetarian',
+        'dessert': 'Dessert',
+        'quick': 'Quick',
+        'breakfast': 'Breakfast'
+    };
+    
+    // Find and activate the clicked filter
+    quickFilters.forEach(filter => {
+        if (filter.textContent.includes(filterNames[filterType])) {
+            filter.classList.add('active');
+        }
+    });
+    
+    // Update active filters
+    activeFilters.clear();
+    if (filterType === 'all') {
+        activeFilters.add('all');
+    } else {
+        activeFilters.add(filterType);
+    }
+    
+    // Update search input
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) searchInput.value = '';
+    
+    updateActiveFilterTags();
+    renderRecipes();
+}
+
+/*****************
+ * STAR RATING SYSTEM
+ *****************/
+function renderStars(rating) {
+    const fullStars = Math.floor(rating);
+    const hasHalfStar = rating % 1 >= 0.5;
+    let stars = '';
+    
+    for (let i = 0; i < 5; i++) {
+        if (i < fullStars) {
+            stars += '<i class="fas fa-star star"></i>';
+        } else if (i === fullStars && hasHalfStar) {
+            stars += '<i class="fas fa-star-half-alt star"></i>';
+        } else {
+            stars += '<i class="far fa-star star empty"></i>';
+        }
+    }
+    
+    return stars;
+}
+
+/*****************
+ * CATEGORIES VIEW
+ *****************/
+function renderCategories() {
+    const categoriesGrid = document.getElementById('categoriesGrid');
+    if (!categoriesGrid) return;
+    
+    const categories = [
+        { 
+            id: 'vegetarian',
+            name: 'Vegetarian',
+            icon: 'fas fa-leaf',
+            description: 'Plant-based deliciousness',
+            count: getCategoryCount('Vegetarian')
+        },
+        { 
+            id: 'dessert',
+            name: 'Dessert',
+            icon: 'fas fa-ice-cream',
+            description: 'Sweet treats and delights',
+            count: getCategoryCount('Dessert')
+        },
+        { 
+            id: 'quick',
+            name: 'Quick Meals',
+            icon: 'fas fa-bolt',
+            description: 'Ready in 30 minutes or less',
+            count: getCategoryCount('Quick')
+        },
+        { 
+            id: 'main',
+            name: 'Main Course',
+            icon: 'fas fa-drumstick-bite',
+            description: 'Hearty and satisfying meals',
+            count: getCategoryCount('Main Course')
+        },
+        { 
+            id: 'breakfast',
+            name: 'Breakfast',
+            icon: 'fas fa-egg',
+            description: 'Start your day right',
+            count: getCategoryCount('Breakfast')
+        },
+        { 
+            id: 'easy',
+            name: 'Easy Recipes',
+            icon: 'fas fa-signal',
+            description: 'Simple and foolproof',
+            count: recipes.filter(r => r.difficulty === 'Easy').length
+        }
+    ];
+    
+    categoriesGrid.innerHTML = categories.map(category => `
+        <div class="category-card" onclick="filterByCategory('${category.id}')">
+            <i class="${category.icon}"></i>
+            <h3>${category.name}</h3>
+            <p>${category.description}</p>
+            <span class="category-count">${category.count} recipes</span>
+        </div>
+    `).join('');
+}
+
+function getCategoryCount(categoryName) {
+    return recipes.filter(recipe => recipe.category === categoryName).length;
+}
+
+function filterByCategory(categoryId) {
+    const categoryMap = {
+        'vegetarian': 'Vegetarian',
+        'dessert': 'Dessert',
+        'quick': 'Quick',
+        'main': 'Main Course',
+        'breakfast': 'Breakfast',
+        'easy': 'Easy'
+    };
+    
+    if (categoryMap[categoryId]) {
+        showHome();
+        setTimeout(() => {
+            toggleQuickFilter(categoryId === 'easy' ? 'all' : categoryId);
+            updateActiveFilterTags();
+            renderRecipes();
+        }, 100);
+    }
+}
+
+/*****************
+ * FAVORITES VIEW
+ *****************/
+function renderFavorites() {
+    const favoritesGrid = document.getElementById('favoritesGrid');
+    if (!favoritesGrid) return;
+    
+    // Note: You'll need to implement favorites API endpoint in backend
+    const favoriteRecipes = recipes.filter(recipe => {
+        // For now, using local storage favorites
+        const favorites = JSON.parse(localStorage.getItem('userFavorites') || '[]');
+        return favorites.includes(recipe.id);
+    });
+    
+    if (favoriteRecipes.length === 0) {
+        favoritesGrid.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-heart"></i>
+                <h3>No favorites yet</h3>
+                <p>Start exploring recipes and save your favorites!</p>
+                <button class="btn-primary" onclick="showHome()">
+                    <i class="fas fa-compass"></i>
+                    Explore Recipes
+                </button>
+            </div>
+        `;
+        return;
+    }
+    
+    favoritesGrid.innerHTML = favoriteRecipes.map(recipe => createRecipeCard(recipe, true)).join('');
+}
+
+/*****************
+ * MY RECIPES VIEW
+ *****************/
+function renderMyRecipes() {
+    const myRecipesGrid = document.getElementById('myRecipesGrid');
+    if (!myRecipesGrid) return;
+    
+    const myRecipes = recipes.filter(recipe => recipe.author === currentUser.username);
+    
+    if (myRecipes.length === 0) {
+        myRecipesGrid.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-utensils"></i>
+                <h3>No recipes yet</h3>
+                <p>Share your first recipe with the community!</p>
+                <button class="btn-primary" onclick="showAddRecipeModal()">
+                    <i class="fas fa-plus"></i>
+                    Create Recipe
+                </button>
+            </div>
+        `;
+        return;
+    }
+    
+    myRecipesGrid.innerHTML = myRecipes.map(recipe => createRecipeCard(recipe, true)).join('');
+}
+
+/*****************
+ * RECIPE MANAGEMENT
  *****************/
 async function loadRecipes() {
     try {
-        const response = await fetch(`${API}/recipes`);
-        recipes = await response.json();
-        renderHero();
+        recipes = await fetchRecipes();
         renderRecipes();
     } catch (error) {
         console.error("Error loading recipes:", error);
-        document.getElementById("recipeGrid").innerHTML =
-            `<p style="grid-column:1/-1;text-align:center;color:#d63031;">
-                Cannot connect to backend. Make sure Flask is running on port 5000.
-            </p>`;
+        showToast("Error loading recipes", "error");
     }
 }
 
-/*****************
- * HERO SECTION
- *****************/
-function renderHero() {
-    const hero = document.getElementById("heroSection");
-
-    if (recipes.length === 0) {
-        hero.innerHTML = `
-            <div class="hero">
-                <img class="hero-image" src="https://images.unsplash.com/photo-1504674900247-0877df9cc836">
-                <div class="hero-content">
-                    <h2 class="hero-title">No recipes yet</h2>
-                    <p class="hero-meta">Be the first to add one!</p>
+function createRecipeCard(recipe, isInView = false) {
+    const isLiked = likedRecipes.has(recipe.id);
+    const isMyRecipe = currentUser && recipe.author === currentUser.username;
+    
+    return `
+        <div class="recipe-card">
+            <div class="recipe-image-container">
+                <img src="${recipe.image}" alt="${recipe.title}" class="recipe-image" onclick="showRecipeDetail(${recipe.id})">
+                <div class="recipe-actions">
+                    <button class="action-btn ${isLiked ? 'liked' : ''}" 
+                            onclick="event.stopPropagation(); toggleLike(${recipe.id}, this)">
+                        <i class="fas fa-heart"></i>
+                    </button>
+                    <button class="action-btn" 
+                            onclick="event.stopPropagation(); toggleFavorite(${recipe.id}, this)">
+                        <i class="fas fa-bookmark"></i>
+                    </button>
                 </div>
-            </div>`;
-        return;
-    }
-
-    let featured = recipes.reduce((a, b) => (a.likes >= b.likes ? a : b));
-
-    hero.innerHTML = `
-        <div class="hero" onclick="showRecipeDetail(${featured.id})">
-            <img class="hero-image" src="${featured.image}">
-            <div class="hero-content">
-                <h2 class="hero-title">${featured.title}</h2>
-                <p class="hero-meta">⏱️ ${featured.prepTime} min • 📁 ${featured.category} • 👤 ${featured.author} • ❤️ ${featured.likes} likes</p>
-                <div class="hero-btn">View Recipe →</div>
+                <div class="recipe-category">${recipe.category}</div>
+                ${isMyRecipe ? '<div class="recipe-category" style="right: 10px; left: auto; background: var(--success); color: white;">My Recipe</div>' : ''}
+            </div>
+            <div class="recipe-info">
+                <h3 class="recipe-title" onclick="showRecipeDetail(${recipe.id})">${recipe.title}</h3>
+                <p class="recipe-author">
+                    <i class="fas fa-user"></i>
+                    by ${recipe.author}
+                </p>
+                <div class="recipe-meta">
+                    <div class="recipe-stats">
+                        <div class="stat-item">
+                            <i class="fas fa-clock"></i>
+                            ${recipe.prepTime} min
+                        </div>
+                        <div class="stat-item">
+                            <i class="fas fa-heart"></i>
+                            ${recipe.likes} likes
+                        </div>
+                    </div>
+                    <div class="recipe-rating">
+                        <div class="star-rating">
+                            ${renderStars(recipe.rating)}
+                        </div>
+                        <span class="rating-value">${recipe.rating}</span>
+                    </div>
+                </div>
+                <div class="recipe-actions-bottom">
+                    <button class="btn-small ${isLiked ? 'liked' : ''}" 
+                            onclick="event.stopPropagation(); toggleLike(${recipe.id}, this)">
+                        <i class="fas fa-heart"></i>
+                        <span class="like-count">${recipe.likes}</span>
+                    </button>
+                    <button class="btn-small" onclick="event.stopPropagation(); shareRecipe(${recipe.id})">
+                        <i class="fas fa-share"></i>
+                        Share
+                    </button>
+                    ${isInView && currentUser && recipe.author === currentUser.username ? `
+                        <button class="btn-small" onclick="event.stopPropagation(); editRecipe(${recipe.id})">
+                            <i class="fas fa-edit"></i>
+                            Edit
+                        </button>
+                        <button class="btn-small" onclick="event.stopPropagation(); deleteRecipe(${recipe.id})">
+                            <i class="fas fa-trash"></i>
+                            Delete
+                        </button>
+                    ` : ''}
+                </div>
             </div>
         </div>
     `;
-}
-
-/*****************
- * RENDER STARS — ADDED
- *****************/
-function renderStars(rating) {
-    return [...Array(5)].map((_, i) =>
-        `<i class="fa-solid fa-star" style="color:${i < rating ? "#ffcc00" : "#ccc"}"></i>`
-    ).join("");
-}
-
-/*****************
- * RECIPE GRID
- *****************/
-/*****************
- * OPEN UPLOAD MODAL — FIXED
- *****************/
-function openUploadModal() {
-    const modal = document.getElementById("uploadModal");
-    const box = document.getElementById("uploadContent");
-
-    box.innerHTML = `
-        <div style="position:relative; max-height:80vh; overflow-y:auto;">
-            <div onclick="closeModal('uploadModal')"
-                style="position:sticky;top:0;text-align:right;font-size:32px;color:#555;cursor:pointer;background:white;padding:5px 10px;">
-                &times;
-            </div>
-
-            <h2 style="font-family:Georgia;margin-bottom:15px">Add New Recipe</h2>
-
-            <input id="upTitle" placeholder="Title" style="width:100%;padding:12px;margin-bottom:15px">
-
-            <select id="upCategory" style="width:100%;padding:12px;margin-bottom:15px">
-                <option>Vegetarian</option>
-                <option>Dessert</option>
-                <option>Quick</option>
-                <option>Main Course</option>
-                <option>Breakfast</option>
-            </select>
-
-            <input id="upTime" type="number" placeholder="Prep Time (min)" style="width:100%;padding:12px;margin-bottom:15px">
-
-            <input id="upImage" placeholder="Image URL" style="width:100%;padding:12px;margin-bottom:15px">
-
-            <textarea id="upIngredients" placeholder="Ingredients (one per line)" 
-                style="width:100%;height:120px;padding:12px;margin-bottom:15px"></textarea>
-
-            <textarea id="upSteps" placeholder="Steps (one per line)"
-                style="width:100%;height:120px;padding:12px;margin-bottom:15px"></textarea>
-
-            <button onclick="submitNewRecipe()" style="padding:12px 24px;cursor:pointer">Add Recipe</button>
-            <button onclick="closeModal('uploadModal')" 
-                style="padding:12px 24px;margin-left:10px;cursor:pointer;background:#e9ecef;color:#333">Cancel</button>
-        </div>
-    `;
-
-    modal.classList.add("active");
-    document.body.style.overflow = "hidden";
 }
 
 function renderRecipes() {
     const grid = document.getElementById("recipeGrid");
-    const search = document.getElementById("searchInput").value.toLowerCase();
-    const category = document.getElementById("categoryFilter").value;
-    const time = document.getElementById("timeFilter").value;
-
-    let filtered = recipes.filter(r => {
-        let matchName = r.title.toLowerCase().includes(search);
-        let matchIng = r.ingredients && r.ingredients.some(i => i.toLowerCase().includes(search));
-        let matchCat = !category || r.category === category;
-        let matchTime = !time || r.prepTime <= Number(time);
-        return (matchName || matchIng) && matchCat && matchTime;
-    });
-
-    if (filtered.length === 0) {
-        grid.innerHTML = `<p style="grid-column:1/-1;text-align:center;color:#777;">No recipes found.</p>`;
+    if (!grid) return;
+    
+    const recipeList = getFilteredRecipes();
+    
+    if (recipeList.length === 0) {
+        grid.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-search"></i>
+                <h3>No recipes found</h3>
+                <p>Try adjusting your search or filters to find what you're looking for.</p>
+            </div>
+        `;
         return;
     }
+    
+    grid.innerHTML = recipeList.map(recipe => createRecipeCard(recipe)).join('');
+}
 
-    grid.innerHTML = filtered.map(r => {
-        const isSaved = currentUser?.favorites?.includes(r.id);
-        const isLiked = r.likes > 0;
-
-        return `
-        <div class="recipe-card" style="position:relative;">
-            <button class="fav-btn"
-                onclick="event.stopPropagation(); toggleFavorite(${r.id})"
-                style="
-                    position:absolute;top:10px;right:10px;
-                    background:white;border:none;border-radius:50%;
-                    width:40px;height:40px;display:flex;align-items:center;
-                    justify-content:center;font-size:20px;cursor:pointer;
-                    box-shadow:0 2px 6px rgba(0,0,0,0.2);
-                ">
-                ${isSaved ? "❤️" : "🤍"}
-            </button>
-
-            <img class="recipe-image" src="${r.image}" onclick="showRecipeDetail(${r.id})">
-
-            <div class="recipe-content">
-                <h3 class="recipe-title" onclick="showRecipeDetail(${r.id})">${r.title}</h3>
-                <span class="recipe-category">${r.category}</span>
-
-                <p style="color:#666;margin:10px 0">⏱️ ${r.prepTime} min • ❤️ ${r.likes} likes</p>
-
-                <div class="recipe-rating" style="margin:6px 0;">
-                    ${renderStars(r.rating || 0)}
-                </div>
-
-                <div class="recipe-actions">
-                    <button class="action-btn like-btn ${isLiked ? "liked" : ""}"
-                        onclick="event.stopPropagation(); toggleLike(${r.id})">
-                        ${isLiked ? "❤️" : "🤍"} ${r.likes}
-                    </button>
-
-                    <button class="action-btn" onclick="event.stopPropagation(); shareRecipe(${r.id})">
-                        Share
-                    </button>
-                </div>
-            </div>
-        </div>`;
-    }).join("");
+function getFilteredRecipes() {
+    let filtered = [...recipes];
+    const searchInput = document.getElementById("searchInput");
+    const searchQuery = searchInput ? searchInput.value.toLowerCase() : '';
+    
+    if (searchQuery) {
+        filtered = filtered.filter(recipe => 
+            recipe.title.toLowerCase().includes(searchQuery) ||
+            recipe.author.toLowerCase().includes(searchQuery) ||
+            recipe.category.toLowerCase().includes(searchQuery) ||
+            (recipe.ingredients && recipe.ingredients.some(ing => ing.toLowerCase().includes(searchQuery)))
+        );
+    }
+    
+    if (!activeFilters.has('all') && activeFilters.size > 0) {
+        filtered = filtered.filter(recipe => {
+            return Array.from(activeFilters).some(filter => {
+                if (filter === 'vegetarian') return recipe.category === 'Vegetarian';
+                if (filter === 'dessert') return recipe.category === 'Dessert';
+                if (filter === 'quick') return recipe.prepTime <= 30;
+                if (filter === 'main') return recipe.category === 'Main Course';
+                if (filter === 'breakfast') return recipe.category === 'Breakfast';
+                if (filter === 'easy') return recipe.difficulty === 'Easy';
+                if (filter === 'under-30') return recipe.prepTime <= 30;
+                return false;
+            });
+        });
+    }
+    
+    return filtered;
 }
 
 /*****************
- * FAVORITES
+ * FILTER SYSTEM
  *****************/
-function showFavorites() {
-    if (!currentUser) return openLoginModal();
-    window.currentPage = "favorites";
-
-    const grid = document.getElementById("recipeGrid");
-    const favIds = currentUser.favorites || [];
-
-    if (favIds.length === 0) {
-        grid.innerHTML = `
-            <p style="grid-column:1/-1;text-align:center;color:#777;font-size:1.1em;">
-                ⭐ You have no favorite recipes yet.
-            </p>`;
+function updateActiveFilterTags() {
+    const container = document.getElementById("activeFilters");
+    const bar = document.getElementById("activeFiltersBar");
+    
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    if (activeFilters.has('all') || activeFilters.size === 0) {
+        bar.style.display = 'none';
         return;
     }
-
-    const favoriteRecipes = recipes.filter(r => favIds.includes(r.id));
-
-    grid.innerHTML = favoriteRecipes.map(r => {
-        const isLiked = r.likes > 0;
-        const isSaved = currentUser?.favorites?.includes(r.id);
-
-        return `
-        <div class="recipe-card" style="position:relative;">
-            <button class="fav-btn"
-                onclick="event.stopPropagation(); toggleFavorite(${r.id}); showFavorites();"
-                style="
-                    position:absolute;top:10px;right:10px;
-                    background:white;border:none;border-radius:50%;
-                    width:40px;height:40px;display:flex;align-items:center;
-                    justify-content:center;font-size:20px;cursor:pointer;
-                    box-shadow:0 2px 6px rgba(0,0,0,0.2);
-                ">
-                ${isSaved ? "❤️" : "🤍"}
-            </button>
-
-            <img class="recipe-image" src="${r.image}" onclick="showRecipeDetail(${r.id})">
-
-            <div class="recipe-content">
-                <h3 class="recipe-title" onclick="showRecipeDetail(${r.id})">${r.title}</h3>
-                <span class="recipe-category">${r.category}</span>
-
-                <p style="color:#666;margin:10px 0">⏱️ ${r.prepTime} min • ❤️ ${r.likes} likes</p>
-
-                <div class="recipe-rating" style="margin:6px 0;">
-                    ${renderStars(r.rating)}
-                </div>
-
-                <div class="recipe-actions">
-                    <button class="action-btn like-btn ${isLiked ? "liked" : ""}"
-                        onclick="event.stopPropagation(); toggleLike(${r.id})">
-                        ${isLiked ? "❤️" : "🤍"} ${r.likes}
-                    </button>
-
-                    <button class="action-btn" onclick="event.stopPropagation(); shareRecipe(${r.id})">
-                        Share
-                    </button>
-                </div>
-            </div>
-
-        </div>`;
-    }).join("");
+    
+    bar.style.display = 'block';
+    
+    Array.from(activeFilters).forEach(filter => {
+        const filterNames = {
+            'vegetarian': 'Vegetarian',
+            'dessert': 'Dessert',
+            'quick': 'Quick',
+            'main': 'Main Course',
+            'breakfast': 'Breakfast',
+            'easy': 'Easy',
+            'under-30': 'Under 30 min'
+        };
+        
+        if (filterNames[filter]) {
+            const tag = document.createElement('div');
+            tag.className = 'active-filter-tag';
+            tag.innerHTML = `
+                ${filterNames[filter]}
+                <button class="remove-filter" onclick="removeFilter('${filter}')">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+            container.appendChild(tag);
+        }
+    });
 }
 
-function toggleFavorite(id) {
-    if (!currentUser) return openLoginModal();
-
-    currentUser.favorites = currentUser.favorites || [];
-
-    if (currentUser.favorites.includes(id)) {
-        currentUser.favorites = currentUser.favorites.filter(f => f !== id);
-    } else {
-        currentUser.favorites.push(id);
+function removeFilter(filterType) {
+    activeFilters.delete(filterType);
+    
+    if (activeFilters.size === 0) {
+        activeFilters.add('all');
+        document.querySelectorAll('.quick-filter').forEach(filter => {
+            filter.classList.remove('active');
+            if (filter.textContent.includes('All')) {
+                filter.classList.add('active');
+            }
+        });
     }
-
-    localStorage.setItem("currentUser", JSON.stringify(currentUser));
-
+    
+    updateActiveFilterTags();
     renderRecipes();
-    renderHero();
+}
+
+function clearAllFilters() {
+    activeFilters.clear();
+    activeFilters.add('all');
+    
+    document.querySelectorAll('.quick-filter').forEach(filter => {
+        filter.classList.remove('active');
+        if (filter.textContent.includes('All')) {
+            filter.classList.add('active');
+        }
+    });
+    
+    const searchInput = document.getElementById("searchInput");
+    if (searchInput) searchInput.value = '';
+    
+    updateActiveFilterTags();
+    renderRecipes();
+    showToast('All filters cleared');
 }
 
 /*****************
  * LIKE SYSTEM
  *****************/
-async function toggleLike(id) {
-    if (!currentUser) return openLoginModal();
-
-    const recipe = recipes.find(r => r.id === id);
-    recipe.likes += 1;
-
-    renderRecipes();
-    renderHero();
-
+async function toggleLike(recipeId, button = null) {
+    if (!currentUser) {
+        showToast("Please login to like recipes", "error");
+        openLoginModal();
+        return;
+    }
+    
+    const recipe = recipes.find(r => r.id === recipeId);
+    if (!recipe) return;
+    
     try {
-        await fetch(`${API}/recipes/${id}/like`, { method: "POST" });
+        if (likedRecipes.has(recipeId)) {
+            // Unlike - you'll need to implement unlike API endpoint
+            likedRecipes.delete(recipeId);
+            recipe.likes = Math.max(0, recipe.likes - 1);
+            showToast("Recipe unliked");
+            
+            if (button) {
+                button.classList.remove('liked');
+                const btnSmall = document.querySelector(`.btn-small[onclick*="toggleLike(${recipeId}"]`);
+                if (btnSmall) btnSmall.classList.remove('liked');
+            }
+        } else {
+            // Like with API call
+            const result = await likeRecipeAPI(recipeId);
+            likedRecipes.add(recipeId);
+            recipe.likes = result.likes;
+            
+            // Heart animation
+            if (button) {
+                const icon = button.querySelector('i');
+                icon.classList.add('heart-animation');
+                
+                setTimeout(() => {
+                    icon.classList.remove('heart-animation');
+                }, 600);
+                
+                button.classList.add('liked');
+                
+                const btnSmall = document.querySelector(`.btn-small[onclick*="toggleLike(${recipeId}"]`);
+                if (btnSmall) btnSmall.classList.add('liked');
+            }
+            
+            showToast("Recipe liked!");
+        }
+        
+        // Update UI
+        if (currentView === 'home') {
+            renderRecipes();
+        } else if (currentView === 'favorites') {
+            renderFavorites();
+        } else if (currentView === 'myRecipes') {
+            renderMyRecipes();
+        }
     } catch (error) {
-        console.error("Error updating like:", error);
+        showToast("Error updating like", "error");
+        console.error(error);
     }
 }
 
 /*****************
- * SHARE LINK
+ * FAVORITES SYSTEM
  *****************/
-function shareRecipe(id) {
-    const link = `${location.href.split('#')[0]}#recipe-${id}`;
-    navigator.clipboard.writeText(link);
-    alert("Recipe link copied to clipboard!");
+function toggleFavorite(recipeId, button = null) {
+    if (!currentUser) {
+        showToast("Please login to save recipes", "error");
+        openLoginModal();
+        return;
+    }
+    
+    let favorites = JSON.parse(localStorage.getItem('userFavorites') || '[]');
+    
+    if (favorites.includes(recipeId)) {
+        // Remove from favorites
+        favorites = favorites.filter(id => id !== recipeId);
+        if (button) button.classList.remove('saved');
+        showToast("Recipe removed from favorites");
+    } else {
+        // Add to favorites
+        favorites.push(recipeId);
+        
+        // Button animation
+        if (button) {
+            button.classList.add('saved');
+            const icon = button.querySelector('i');
+            icon.style.transform = 'scale(1.2)';
+            setTimeout(() => {
+                icon.style.transform = 'scale(1)';
+            }, 300);
+        }
+        
+        showToast("Recipe added to favorites!");
+    }
+    
+    // Update localStorage
+    localStorage.setItem("userFavorites", JSON.stringify(favorites));
 }
 
 /*****************
- * RECIPE DETAIL
+ * RECIPE DETAIL MODAL
  *****************/
-function showRecipeDetail(id) {
-    const r = recipes.find(x => x.id === id);
-    if (!r) return;
-
-    const modal = document.getElementById("detailModal");
-    const box = document.getElementById("detailContent");
-
-    box.innerHTML = `
-        <div style="position:relative; max-height:80vh; overflow-y:auto;">
-            <div onclick="closeModal('detailModal')" 
-                style="position:sticky;top:0;text-align:right;font-size:32px;color:#555;cursor:pointer;background:white;padding:5px 10px;z-index:1000;">
-                &times;
+async function showRecipeDetail(id) {
+    const recipe = recipes.find(r => r.id === id);
+    if (!recipe) {
+        showToast("Recipe not found", "error");
+        return;
+    }
+    
+    currentRecipeId = id;
+    
+    // Update modal content
+    document.getElementById('modalImage').src = recipe.image;
+    document.getElementById('modalTitle').textContent = recipe.title;
+    document.getElementById('modalAuthor').textContent = 'by ' + recipe.author;
+    document.getElementById('modalTime').textContent = recipe.prepTime + ' min';
+    document.getElementById('modalCategory').textContent = recipe.category;
+    document.getElementById('modalLikes').textContent = recipe.likes;
+    document.getElementById('modalRating').textContent = recipe.rating;
+    document.getElementById('modalDifficulty').textContent = recipe.difficulty || 'Medium';
+    
+    // Populate ingredients
+    const ingredientsList = document.getElementById('modalIngredients');
+    ingredientsList.innerHTML = Array.isArray(recipe.ingredients) ? 
+        recipe.ingredients.map(ing => `<li>${ing}</li>`).join('') : '';
+    
+    // Populate instructions
+    const stepsList = document.getElementById('modalSteps');
+    stepsList.innerHTML = Array.isArray(recipe.steps) ? 
+        recipe.steps.map((step, index) => `<li>${step}</li>`).join('') : '';
+    
+    // Setup star rating
+    const modalRatingStars = document.getElementById('modalRatingStars');
+    modalRatingStars.innerHTML = renderStars(recipe.rating);
+    
+    // Setup comment form
+    const commentFormContainer = document.getElementById('commentFormContainer');
+    if (currentUser) {
+        commentFormContainer.innerHTML = `
+            <div class="comment-form">
+                <textarea id="commentInput" placeholder="Add your comment..."></textarea>
+                <button onclick="addComment()">
+                    <i class="fas fa-paper-plane"></i>
+                    Post Comment
+                </button>
             </div>
-
-            <h2 data-id="${r.id}" style="font-family:Georgia;margin-bottom:10px">${r.title}</h2>
-
-            <p style="color:#666;margin-bottom:20px">📁 ${r.category} • ⏱️ ${r.prepTime} min • 👤 ${r.author}</p>
-
-            <img src="${r.image}" style="width:100%;border-radius:10px;margin-bottom:20px;position:relative;">
-            <button
-                onclick="toggleFavorite(${r.id}); event.stopPropagation();" 
-                class="fav-btn-modal"
-                style="
-                    position:absolute;
-                    top:20px;
-                    right:20px;
-                    background:white;
-                    border:none;
-                    border-radius:50%;
-                    width:45px;
-                    height:45px;
-                    display:flex;
-                    align-items:center;
-                    justify-content:center;
-                    font-size:22px;
-                    cursor:pointer;
-                    box-shadow:0 2px 6px rgba(0,0,0,0.2);
-                ">
-                ${currentUser?.favorites?.includes(r.id) ? "❤️" : "🤍"}
-            </button>
-
-            <div class="rating-box" style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
-                <div class="rating-stars" style="display:flex;gap:4px;">
-                    <i class="star fa-solid fa-star" data-value="1" style="cursor:pointer;font-size:22px;"></i>
-                    <i class="star fa-solid fa-star" data-value="2" style="cursor:pointer;font-size:22px;"></i>
-                    <i class="star fa-solid fa-star" data-value="3" style="cursor:pointer;font-size:22px;"></i>
-                    <i class="star fa-solid fa-star" data-value="4" style="cursor:pointer;font-size:22px;"></i>
-                    <i class="star fa-solid fa-star" data-value="5" style="cursor:pointer;font-size:22px;"></i>
-                </div>
-                <span class="rating-label" style="color:#777;">Rating</span>
+        `;
+    } else {
+        commentFormContainer.innerHTML = `
+            <div class="comment-form">
+                <p style="text-align: center; color: var(--gray); padding: 20px;">
+                    <i class="fas fa-lock"></i> Please <a href="#" onclick="openLoginModal()" style="color: var(--primary);">login</a> to add comments
+                </p>
             </div>
-
-            <h3 style="margin-top:20px">Ingredients</h3>
-            <ul style="margin:10px 0 20px 20px;">
-                ${r.ingredients.map(i => `<li style="margin:5px 0">${i}</li>`).join("")}
-            </ul>
-
-            <h3 style="margin-top:20px">Instructions</h3>
-            <ol style="margin:10px 0 20px 20px;">
-                ${r.steps.map(s => `<li style="margin:8px 0;line-height:1.6">${s}</li>`).join("")}
-            </ol>
-            <h3 style="margin-top:20px;">Comments</h3>
-<div id="commentList" style="margin-bottom:20px; padding-left:20px; color:#444;">
-    Loading comments...
-</div>
-
-
-${currentUser ? `
-<div style="margin-top:10px;">
-    <textarea id="commentInput" placeholder="Write a comment..." 
-        style="width:100%;padding:10px;height:80px;margin-bottom:10px;"></textarea>
-    <button onclick="submitComment(${r.id})" 
-        style="padding:10px 20px;cursor:pointer;">Add Comment</button>
-</div>
-` : `<p style="color:#777;">Login to add comments</p>`}
-
-        </div>
-        
-    `;
-
-    modal.classList.add("active");
-    document.body.style.overflow = "hidden";
-
-    loadComments(id);  // ✅ Call the function AFTER box.innerHTML is set
+        `;
+    }
+    
+    // Load comments
+    await loadComments(id);
+    
+    // Show modal
+    document.getElementById('recipeModal').classList.add('active');
+    document.body.style.overflow = 'hidden';
 }
+
 async function loadComments(recipeId) {
+    const container = document.getElementById('commentsContainer');
+    container.innerHTML = '<p style="color: var(--gray-light); text-align: center; padding: 20px;">Loading comments...</p>';
+    
     try {
-        const res = await fetch(`${API}/comments/${recipeId}`);
-        const comments = await res.json();
-
-        const box = document.getElementById("commentList");
-
-        if (comments.length === 0) {
-            box.innerHTML = `<p style="color:#777;">No comments yet.</p>`;
+        const comments = await fetchComments(recipeId);
+        
+        if (!comments || comments.length === 0) {
+            container.innerHTML = '<p style="color: var(--gray-light); text-align: center; padding: 20px;">No comments yet. Be the first to comment!</p>';
             return;
         }
-
-        box.innerHTML = comments
-            .map(c => `<p><strong>${c.user}:</strong> ${c.content}</p>`)
-            .join("");
+        
+        container.innerHTML = comments.map(comment => `
+            <div class="comment">
+                <div class="avatar">${comment.user.charAt(0).toUpperCase()}</div>
+                <div class="comment-content">
+                    <div class="comment-header">
+                        <div class="comment-author">${comment.user}</div>
+                    </div>
+                    <div class="comment-text">${comment.content}</div>
+                </div>
+            </div>
+        `).join('');
     } catch (error) {
-        console.error("Failed to load comments", error);
+        container.innerHTML = '<p style="color: var(--gray-light); text-align: center; padding: 20px;">Error loading comments</p>';
     }
 }
-async function submitComment(recipeId) {
-    if (!currentUser) return openLoginModal();
 
-    const content = document.getElementById("commentInput").value.trim();
-    if (!content) return alert("Write something!");
-
-    await fetch(`${API}/comments/${recipeId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+async function addComment() {
+    if (!currentUser) {
+        showToast("Please login to comment", "error");
+        openLoginModal();
+        return;
+    }
+    
+    const commentInput = document.getElementById('commentInput');
+    const commentText = commentInput.value.trim();
+    
+    if (!commentText) {
+        showToast('Please enter a comment', 'error');
+        return;
+    }
+    
+    if (!currentRecipeId) return;
+    
+    try {
+        await addCommentAPI(currentRecipeId, {
             user_id: currentUser.id,
-            content
-        })
-    });
+            content: commentText
+        });
+        
+        commentInput.value = '';
+        await loadComments(currentRecipeId);
+        showToast('Comment added successfully');
+    } catch (error) {
+        showToast('Error adding comment', 'error');
+    }
+}
 
-    document.getElementById("commentInput").value = "";
-    loadComments(recipeId);
+function closeModal() {
+    document.getElementById('recipeModal').classList.remove('active');
+    document.body.style.overflow = 'auto';
+    currentRecipeId = null;
 }
 
 /*****************
- * SUBMIT NEW RECIPE
+ * SHARE FUNCTION
  *****************/
-
-async function submitNewRecipe() {
-    const title = document.getElementById("upTitle").value.trim();
-    const category = document.getElementById("upCategory").value;
-    const prepTime = Number(document.getElementById("upTime").value);
-    const image = document.getElementById("upImage").value.trim() || "https://images.unsplash.com/photo-1504674900247-0877df9cc836";
-    const ingredients = document.getElementById("upIngredients").value.split("\n").filter(x => x.trim());
-    const steps = document.getElementById("upSteps").value.split("\n").filter(x => x.trim());
-
-    if (!title || !category || !prepTime || !ingredients.length || !steps.length) {
-        return alert("Please fill all fields");
-    }
-
-    try {
-        await fetch(`${API}/recipes`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                title,
-                category,
-                prepTime,
-                image,
-                ingredients,
-                steps,
-                likes: 0,
-                author: currentUser.username,
-                rating: 0
-            })
+function shareRecipe(id) {
+    const recipe = recipes.find(r => r.id === id);
+    if (!recipe) return;
+    
+    const shareText = `Check out this recipe: ${recipe.title} on Pocket Chef`;
+    const shareUrl = window.location.href.split('#')[0] + `#recipe-${id}`;
+    
+    // Animation for share button
+    const shareButtons = document.querySelectorAll(`[onclick*="shareRecipe(${id})"]`);
+    shareButtons.forEach(btn => {
+        btn.style.transform = 'scale(1.1)';
+        setTimeout(() => {
+            btn.style.transform = 'scale(1)';
+        }, 300);
+    });
+    
+    if (navigator.share) {
+        navigator.share({
+            title: recipe.title,
+            text: shareText,
+            url: shareUrl
         });
+    } else {
+        navigator.clipboard.writeText(`${shareText}\n${shareUrl}`).then(() => {
+            showToast("Link copied to clipboard!");
+        }).catch(() => {
+            // Fallback for older browsers
+            const textArea = document.createElement('textarea');
+            textArea.value = `${shareText}\n${shareUrl}`;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            showToast("Link copied to clipboard!");
+        });
+    }
+}
 
-        closeModal("uploadModal");
+/*****************
+ * ADD RECIPE MODAL
+ *****************/
+function showAddRecipeModal() {
+    if (!currentUser) {
+        showToast("Please login to add recipes", "error");
+        openLoginModal();
+        return;
+    }
+    
+    document.getElementById('addRecipeModal').classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeAddRecipeModal() {
+    document.getElementById('addRecipeModal').classList.remove('active');
+    document.body.style.overflow = 'auto';
+    document.getElementById('recipeForm').reset();
+    resetFormFields();
+}
+
+function resetFormFields() {
+    document.getElementById('ingredientsContainer').innerHTML = `
+        <div class="ingredient-row">
+            <input type="text" class="ingredient-input" placeholder="e.g., 2 cups all-purpose flour">
+            <button type="button" class="remove-btn" onclick="removeIngredient(this)">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    `;
+    
+    document.getElementById('instructionsContainer').innerHTML = `
+        <div class="instruction-row">
+            <textarea class="instruction-input" placeholder="e.g., Preheat oven to 350°F" rows="2"></textarea>
+            <button type="button" class="remove-btn" onclick="removeInstruction(this)">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    `;
+}
+
+function addIngredientField() {
+    const container = document.getElementById('ingredientsContainer');
+    const div = document.createElement('div');
+    div.className = 'ingredient-row';
+    div.innerHTML = `
+        <input type="text" class="ingredient-input" placeholder="e.g., 2 cups all-purpose flour">
+        <button type="button" class="remove-btn" onclick="removeIngredient(this)">
+            <i class="fas fa-times"></i>
+        </button>
+    `;
+    container.appendChild(div);
+}
+
+function removeIngredient(button) {
+    if (document.querySelectorAll('.ingredient-row').length > 1) {
+        button.parentElement.remove();
+    }
+}
+
+function addInstructionField() {
+    const container = document.getElementById('instructionsContainer');
+    const div = document.createElement('div');
+    div.className = 'instruction-row';
+    div.innerHTML = `
+        <textarea class="instruction-input" placeholder="e.g., Preheat oven to 350°F" rows="2"></textarea>
+        <button type="button" class="remove-btn" onclick="removeInstruction(this)">
+            <i class="fas fa-times"></i>
+        </button>
+    `;
+    container.appendChild(div);
+}
+
+function removeInstruction(button) {
+    if (document.querySelectorAll('.instruction-row').length > 1) {
+        button.parentElement.remove();
+    }
+}
+
+async function submitRecipe(event) {
+    event.preventDefault();
+    
+    const title = document.getElementById('recipeTitle').value.trim();
+    const category = document.getElementById('recipeCategory').value;
+    const prepTime = document.getElementById('recipeTime').value;
+    const difficulty = document.getElementById('recipeDifficulty').value;
+    const image = document.getElementById('recipeImage').value.trim() || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800&q=80';
+    
+    const ingredients = Array.from(document.querySelectorAll('.ingredient-input'))
+        .map(input => input.value.trim())
+        .filter(value => value);
+    
+    const steps = Array.from(document.querySelectorAll('.instruction-input'))
+        .map(input => input.value.trim())
+        .filter(value => value);
+    
+    if (!title || !category || !prepTime || ingredients.length === 0 || steps.length === 0) {
+        showToast('Please fill all required fields', 'error');
+        return;
+    }
+    
+    const recipeData = {
+        title,
+        category,
+        prepTime: parseInt(prepTime),
+        image,
+        ingredients,
+        steps,
+        likes: 0,
+        author: currentUser.username,
+        rating: 4
+    };
+    
+    try {
+        await addRecipeAPI(recipeData);
+        closeAddRecipeModal();
         await loadRecipes();
-        alert("Recipe added successfully!");
+        showToast('Recipe added successfully!');
     } catch (error) {
-        alert("Error adding recipe");
-        console.error(error);
+        showToast('Error adding recipe. Please try again.', 'error');
     }
 }
 
@@ -607,119 +1267,151 @@ async function submitNewRecipe() {
  * EDIT RECIPE
  *****************/
 function editRecipe(id) {
-    const r = recipes.find(x => x.id === id);
-    if (!r) return;
-
-    const modal = document.getElementById("uploadModal");
-    const box = document.getElementById("uploadContent");
-
-    box.innerHTML = `
-        <div style="position:relative; max-height:80vh; overflow-y:auto;">
-            <div onclick="closeModal('uploadModal')"
-                style="position:sticky;top:0;text-align:right;font-size:32px;color:#555;cursor:pointer;background:white;padding:5px 10px;">
-                &times;
-            </div>
-
-            <h2 style="font-family:Georgia;margin-bottom:15px">Edit Recipe</h2>
-
-            <input id="upTitle" value="${r.title}" style="width:100%;padding:12px;margin-bottom:15px">
-
-            <select id="upCategory" style="width:100%;padding:12px;margin-bottom:15px">
-                <option ${r.category === "Vegetarian" ? "selected" : ""}>Vegetarian</option>
-                <option ${r.category === "Dessert" ? "selected" : ""}>Dessert</option>
-                <option ${r.category === "Quick" ? "selected" : ""}>Quick</option>
-                <option ${r.category === "Main Course" ? "selected" : ""}>Main Course</option>
-                <option ${r.category === "Breakfast" ? "selected" : ""}>Breakfast</option>
-            </select>
-
-            <input id="upTime" type="number" value="${r.prepTime}" style="width:100%;padding:12px;margin-bottom:15px">
-
-            <input id="upImage" value="${r.image}" style="width:100%;padding:12px;margin-bottom:15px">
-
-            <textarea id="upIngredients" style="width:100%;height:120px;padding:12px;margin-bottom:15px">${r.ingredients.join("\n")}</textarea>
-
-            <textarea id="upSteps" style="width:100%;height:120px;padding:12px;margin-bottom:15px">${r.steps.join("\n")}</textarea>
-
-            <button onclick="saveEditedRecipe(${r.id})" style="padding:12px 24px;cursor:pointer">Save Changes</button>
-            <button onclick="closeModal('uploadModal')" style="padding:12px 24px;margin-left:10px;cursor:pointer;background:#e9ecef;color:#333">Cancel</button>
-        </div>
-    `;
-
-    modal.classList.add("active");
-    document.body.style.overflow = "hidden";
+    const recipe = recipes.find(r => r.id === id);
+    if (!recipe) return;
+    
+    // Populate the add recipe modal with existing data
+    document.getElementById('recipeTitle').value = recipe.title;
+    document.getElementById('recipeCategory').value = recipe.category;
+    document.getElementById('recipeTime').value = recipe.prepTime;
+    document.getElementById('recipeDifficulty').value = recipe.difficulty || 'Medium';
+    document.getElementById('recipeImage').value = recipe.image;
+    
+    // Clear existing fields
+    const ingredientsContainer = document.getElementById('ingredientsContainer');
+    const instructionsContainer = document.getElementById('instructionsContainer');
+    
+    ingredientsContainer.innerHTML = '';
+    instructionsContainer.innerHTML = '';
+    
+    // Add ingredients
+    if (Array.isArray(recipe.ingredients)) {
+        recipe.ingredients.forEach((ingredient) => {
+            const div = document.createElement('div');
+            div.className = 'ingredient-row';
+            div.innerHTML = `
+                <input type="text" class="ingredient-input" value="${ingredient}">
+                <button type="button" class="remove-btn" onclick="removeIngredient(this)">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+            ingredientsContainer.appendChild(div);
+        });
+    }
+    
+    // Add instructions
+    if (Array.isArray(recipe.steps)) {
+        recipe.steps.forEach((step) => {
+            const div = document.createElement('div');
+            div.className = 'instruction-row';
+            div.innerHTML = `
+                <textarea class="instruction-input" rows="2">${step}</textarea>
+                <button type="button" class="remove-btn" onclick="removeInstruction(this)">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+            instructionsContainer.appendChild(div);
+        });
+    }
+    
+    // Store recipe ID for update
+    const form = document.getElementById('recipeForm');
+    form.dataset.editId = id;
+    
+    // Show modal with edit mode
+    showAddRecipeModal();
+    document.querySelector('.modal-title').textContent = 'Edit Recipe';
+    
+    // Update form submit handler
+    form.onsubmit = function(e) {
+        e.preventDefault();
+        updateRecipe(id);
+    };
 }
 
-async function saveEditedRecipe(id) {
-    const title = document.getElementById("upTitle").value.trim();
-    const category = document.getElementById("upCategory").value;
-    const prepTime = Number(document.getElementById("upTime").value);
-    const image = document.getElementById("upImage").value.trim();
-    const ingredients = document.getElementById("upIngredients").value.split("\n").filter(x => x.trim());
-    const steps = document.getElementById("upSteps").value.split("\n").filter(x => x.trim());
-
-    if (!title || !category || !prepTime || !ingredients.length || !steps.length) {
-        return alert("Please fill all fields");
+async function updateRecipe(id) {
+    const title = document.getElementById('recipeTitle').value.trim();
+    const category = document.getElementById('recipeCategory').value;
+    const prepTime = document.getElementById('recipeTime').value;
+    const difficulty = document.getElementById('recipeDifficulty').value;
+    const image = document.getElementById('recipeImage').value.trim() || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800&q=80';
+    
+    const ingredients = Array.from(document.querySelectorAll('.ingredient-input'))
+        .map(input => input.value.trim())
+        .filter(value => value);
+    
+    const steps = Array.from(document.querySelectorAll('.instruction-input'))
+        .map(input => input.value.trim())
+        .filter(value => value);
+    
+    if (!title || !category || !prepTime || ingredients.length === 0 || steps.length === 0) {
+        showToast('Please fill all required fields', 'error');
+        return;
     }
-
+    
+    const recipeData = {
+        title,
+        category,
+        prepTime: parseInt(prepTime),
+        image,
+        ingredients,
+        steps,
+        rating: 4
+    };
+    
     try {
-        await fetch(`${API}/recipes/${id}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                title,
-                category,
-                prepTime,
-                image,
-                ingredients,
-                steps
-            })
-        });
-
-        closeModal("uploadModal");
+        await updateRecipeAPI(id, recipeData);
+        closeAddRecipeModal();
         await loadRecipes();
-        alert("Recipe updated successfully!");
+        showToast('Recipe updated successfully!');
     } catch (error) {
-        alert("Error updating recipe");
-        console.error(error);
+        showToast('Error updating recipe. Please try again.', 'error');
     }
 }
 
 /*****************
- * STAR RATING SYSTEM
+ * DELETE RECIPE
  *****************/
-function activateStarRating() {
-    const stars = document.querySelectorAll(".rating-stars .star");
-    if (!stars.length) return;
-
-    stars.forEach(star => {
-        star.addEventListener("click", () => {
-            const value = parseInt(star.getAttribute("data-value"));
-
-            stars.forEach(s => s.classList.remove("active"));
-
-            stars.forEach(s => {
-                if (parseInt(s.getAttribute("data-value")) <= value) {
-                    s.classList.add("active");
-                }
-            });
-
-            const recipeId = document.querySelector("#detailContent h2").getAttribute("data-id");
-
-            fetch(`${API}/recipes/${recipeId}`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ rating: value })
-            });
-        });
-    });
+async function deleteRecipe(id) {
+    if (!confirm('Are you sure you want to delete this recipe?')) {
+        return;
+    }
+    
+    try {
+        await deleteRecipeAPI(id);
+        await loadRecipes();
+        showToast('Recipe deleted successfully!');
+    } catch (error) {
+        showToast('Error deleting recipe. Please try again.', 'error');
+    }
 }
 
 /*****************
- * INITIALIZATION
+ * TOAST NOTIFICATION
  *****************/
-updateAuthArea();
-loadRecipes();
+function showToast(message, type = 'success') {
+    const toast = document.getElementById('toast');
+    const toastMessage = document.getElementById('toastMessage');
+    
+    toastMessage.textContent = message;
+    
+    const icon = toast.querySelector('i');
+    if (type === 'error') {
+        icon.className = 'fas fa-exclamation-circle';
+        icon.style.color = 'var(--error)';
+    } else {
+        icon.className = 'fas fa-check-circle';
+        icon.style.color = 'var(--success)';
+    }
+    
+    toast.classList.add('show');
+    
+    setTimeout(() => {
+        hideToast();
+    }, 4000);
+}
 
-document.getElementById("searchInput").addEventListener("input", renderRecipes);
-document.getElementById("categoryFilter").addEventListener("change", renderRecipes);
-document.getElementById("timeFilter").addEventListener("change", renderRecipes);
+function hideToast() {
+    const toast = document.getElementById('toast');
+    toast.classList.remove('show');
+}
