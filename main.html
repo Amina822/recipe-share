@@ -22,25 +22,20 @@
                 </div>
                 
                 <div class="nav-links">
-                    <a href="#" class="nav-link active" onclick="showHome()">
+                    <a href="#" class="nav-link active" onclick="showHome()" data-label="Home">
                         <i class="fas fa-home"></i>
-                        <span class="nav-text">Home</span>
                     </a>
-                    <a href="#" class="nav-link" onclick="showCategories()">
+                    <a href="#" class="nav-link" onclick="showCategories()" data-label="Categories">
                         <i class="fas fa-th-large"></i>
-                        <span class="nav-text">Categories</span>
                     </a>
-                    <a href="#" class="nav-link" onclick="showFavorites()">
-                        <i class="fas fa-heart"></i>
-                        <span class="nav-text">Favorites</span>
+                    <a href="#" class="nav-link" onclick="showFavorites()" data-label="Favorites">
+                        <i class="fas fa-bookmark"></i>
                     </a>
-                    <a href="#" class="nav-link" onclick="showMyRecipes()">
+                    <a href="#" class="nav-link" onclick="showMyRecipes()" data-label="My Recipes">
                         <i class="fas fa-book"></i>
-                        <span class="nav-text">My Recipes</span>
                     </a>
-                    <a href="#" class="nav-link" onclick="showAbout()">
+                    <a href="#" class="nav-link" onclick="showAbout()" data-label="About">
                         <i class="fas fa-info-circle"></i>
-                        <span class="nav-text">About</span>
                     </a>
                 </div>
                 
@@ -64,18 +59,6 @@
     <div class="container main-container">
         <!-- Main Content Area -->
         <div class="main-content">
-            <!-- Active Filters Bar -->
-            <div class="active-filters-bar" id="activeFiltersBar" style="display: none;">
-                <div class="active-filters-content">
-                    <span class="active-filters-label">Active Filters:</span>
-                    <div class="active-filter-tags" id="activeFilters"></div>
-                    <button class="clear-filters-btn" onclick="clearAllFilters()">
-                        <i class="fas fa-times"></i>
-                        Clear All
-                    </button>
-                </div>
-            </div>
-
             <!-- Content Sections -->
             <div id="contentArea">
                 <!-- Home View -->
@@ -89,23 +72,6 @@
                             <i class="fas fa-plus"></i>
                             Add Recipe
                         </button>
-                    </div>
-                    
-                    <!-- Quick Filters -->
-                    <div class="quick-filters">
-                        <div class="quick-filter active" onclick="toggleQuickFilter('all')">All</div>
-                        <div class="quick-filter" onclick="toggleQuickFilter('vegetarian')">
-                            <i class="fas fa-leaf"></i> Vegetarian
-                        </div>
-                        <div class="quick-filter" onclick="toggleQuickFilter('dessert')">
-                            <i class="fas fa-ice-cream"></i> Dessert
-                        </div>
-                        <div class="quick-filter" onclick="toggleQuickFilter('quick')">
-                            <i class="fas fa-bolt"></i> Quick
-                        </div>
-                        <div class="quick-filter" onclick="toggleQuickFilter('breakfast')">
-                            <i class="fas fa-egg"></i> Breakfast
-                        </div>
                     </div>
                     
                     <!-- Recipe Grid -->
@@ -332,8 +298,19 @@
                         </div>
                         
                         <div class="form-group">
-                            <label for="recipeImage">Image URL</label>
-                            <input type="url" id="recipeImage" placeholder="https://example.com/recipe-image.jpg">
+                            <label for="recipeImage">Recipe Image</label>
+                            <div class="image-upload-container">
+                                <input type="url" id="recipeImageURL" placeholder="Enter image URL (https://...)" class="image-input">
+                                <span class="or-divider">OR</span>
+                                <div class="file-upload-wrapper">
+                                    <input type="file" id="recipeImageFile" accept="image/*" class="file-input">
+                                    <label for="recipeImageFile" class="file-label">
+                                        <i class="fas fa-upload"></i>
+                                        <span id="fileNameDisplay">Choose image from device</span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div id="imagePreview" class="image-preview"></div>
                         </div>
                     </div>
                     

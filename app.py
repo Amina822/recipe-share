@@ -1,26 +1,90 @@
-import psycopg2
-from flask import Flask, request, jsonify
+import os
+import uuid
+import json
+
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
-import time
+from werkzeug.utils import secure_filename
 
 # ---------------- App Setup ----------------------
 app = Flask(__name__)
+CORS(app)  # ok for local dev
 
-CORS(app)
-
+# ---------------- Database -----------------------
 DATABASE_URL = "postgresql://postgres:2006@127.0.0.1:5432/web_back"
-app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SQLALCHEMY_ECHO'] = True
+app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["SQLALCHEMY_ECHO"] = True
 
 db = SQLAlchemy(app)
 
+# ---------------- Upload Config ------------------
+UPLOAD_FOLDER = os.path.join(app.root_path, "uploads")  # absolute path
+ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp", "avif"}
+
+app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16MB
+
+
+def allowed_file(filename: str) -> bool:
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def ensure_upload_folder():
+    os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+
+
+def parse_list_field(value):
+    """
+    Accepts:
+    - JSON string: '["a","b"]'
+    - python list already
+    - comma/newline separated string: "a,b" or "a\nb"
+    Returns list[str]
+    """
+    if value is None:
+        return []
+
+    if isinstance(value, list):
+        return [str(x).strip() for x in value if str(x).strip()]
+
+    if isinstance(value, str):
+        s = value.strip()
+        if not s:
+            return []
+        # try JSON first
+        try:
+            parsed = json.loads(s)
+            if isinstance(parsed, list):
+                return [str(x).strip() for x in parsed if str(x).strip()]
+        except Exception:
+            pass
+
+        # fallback: split by newlines/commas
+        parts = []
+        for line in s.replace(",", "\n").split("\n"):
+            t = line.strip()
+            if t:
+                parts.append(t)
+        return parts
+
+    return []
+
+
+# ---------------- Routes -------------------------
 @app.route("/")
 def home():
     return "Pocket Chef API is running!"
 
-# ---------------- Models ------------------------
+
+@app.route("/uploads/<path:filename>")
+def uploaded_file(filename):
+    # This lets the browser load: http://127.0.0.1:5000/uploads/xxx.jpg
+    return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
+
+
+# ---------------- Models -------------------------
 class User(db.Model):
     __tablename__ = "users"
     id = db.Column(db.Integer, primary_key=True)
@@ -28,9 +92,10 @@ class User(db.Model):
     password = db.Column(db.String(120), nullable=False)
     role = db.Column(db.String(20), default="user")
 
+
 class Recipe(db.Model):
     __tablename__ = "recipes"
-    id = db.Column(db.Integer, primary_key=True)  # auto-increment
+    id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(120), nullable=False)
     category = db.Column(db.String(80))
     prepTime = db.Column(db.Integer)
@@ -41,233 +106,270 @@ class Recipe(db.Model):
     author = db.Column(db.String(80))
     rating = db.Column(db.Integer, default=0)
 
+
 class Favorite(db.Model):
+    __tablename__ = "favorites"
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
-    recipe_id = db.Column(db.Integer, db.ForeignKey('recipes.id'))
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    recipe_id = db.Column(db.Integer, db.ForeignKey("recipes.id"))
+
 
 class Comment(db.Model):
+    __tablename__ = "comments"
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
-    recipe_id = db.Column(db.Integer, db.ForeignKey('recipes.id'))
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    recipe_id = db.Column(db.Integer, db.ForeignKey("recipes.id"))
     content = db.Column(db.Text)
 
-# ---------------- Helper Functions ----------------
-def check_admin(username):
-    u = User.query.filter_by(username=username).first()
-    return u and u.role == 'admin'
 
-# ---------------- Routes ------------------------
-
-# Get all recipes
+# ---------------- Recipes ------------------------
 @app.route("/recipes", methods=["GET"])
 def get_recipes():
     recipes = Recipe.query.all()
-    result = []
-    for r in recipes:
-        result.append({
+    return jsonify([
+        {
             "id": r.id,
             "title": r.title,
             "category": r.category,
             "prepTime": r.prepTime,
-            "image": r.image,
-            "ingredients": r.ingredients,
-            "steps": r.steps,
-            "likes": r.likes,
-            "author": r.author,
-            "rating": r.rating
-        })
-    return jsonify(result)
+            "image": r.image or "",
+            "ingredients": r.ingredients or [],
+            "steps": r.steps or [],
+            "likes": r.likes or 0,
+            "author": r.author or "",
+            "rating": r.rating or 0,
+        }
+        for r in recipes
+    ])
 
-# Add new recipe (ID auto-generated)
+
 @app.route("/recipes", methods=["POST"])
 def add_recipe():
-    data = request.json
-    r = Recipe(
-        title=data.get("title"),
-        category=data.get("category"),
-        prepTime=data.get("prepTime"),
-        image=data.get("image"),
-        ingredients=data.get("ingredients"),
-        steps=data.get("steps"),
-        likes=data.get("likes", 0),
-        author=data.get("author"),
-        rating=data.get("rating", 0)
+    ensure_upload_folder()
+
+    # IMPORTANT: With FormData, values are in request.form and files in request.files
+    data = request.form.to_dict()
+
+    # required fields
+    title = (data.get("title") or "").strip()
+    if not title:
+        return jsonify({"error": "title is required"}), 400
+
+    category = (data.get("category") or "").strip()
+    author = (data.get("author") or "").strip()
+
+    # numbers safe
+    try:
+        prep_time = int(data.get("prepTime") or 0)
+    except:
+        prep_time = 0
+
+    # rating default 0
+    try:
+        rating = int(data.get("rating") or 0)
+    except:
+        rating = 0
+
+    # likes default 0
+    try:
+        likes = int(data.get("likes") or 0)
+    except:
+        likes = 0
+
+    # lists
+    ingredients = parse_list_field(data.get("ingredients"))
+    steps = parse_list_field(data.get("steps"))
+
+    # -------- Image: file OR URL --------
+    image_url = (data.get("image") or "").strip()
+
+    # If a file is present, prefer it over URL
+    file = request.files.get("image")
+    if file and file.filename:
+        if not allowed_file(file.filename):
+            return jsonify({"error": "Invalid file type"}), 400
+
+        filename = secure_filename(file.filename)
+        unique_name = f"{uuid.uuid4().hex}_{filename}"
+        save_path = os.path.join(app.config["UPLOAD_FOLDER"], unique_name)
+        file.save(save_path)
+
+        # store relative path in DB
+        image_url = f"/uploads/{unique_name}"
+
+    recipe = Recipe(
+        title=title,
+        category=category,
+        prepTime=prep_time,
+        image=image_url,           # <-- will be /uploads/... if file uploaded
+        ingredients=ingredients,
+        steps=steps,
+        likes=likes,
+        author=author,
+        rating=rating,
     )
-    db.session.add(r)
+
+    db.session.add(recipe)
     db.session.commit()
-    
+
     return jsonify({
         "status": "ok",
-        "recipe": {"id": r.id, "title": r.title, "category": r.category}
+        "recipe": {
+            "id": recipe.id,
+            "title": recipe.title,
+            "image": recipe.image or ""
+        }
     }), 201
 
-# Update recipe
+
 @app.route("/recipes/<int:rid>", methods=["PUT"])
 def edit_recipe(rid):
-    r = Recipe.query.get(rid)
-    if not r:
+    recipe = Recipe.query.get(rid)
+    if not recipe:
         return jsonify({"error": "Recipe not found"}), 404
-    
-    data = request.json
-    r.title = data.get("title", r.title)
-    r.category = data.get("category", r.category)
-    r.prepTime = data.get("prepTime", r.prepTime)
-    r.image = data.get("image", r.image)
-    r.ingredients = data.get("ingredients", r.ingredients)
-    r.steps = data.get("steps", r.steps)
-    r.rating = data.get("rating", r.rating)
+
+    data = request.get_json(silent=True) or {}
+
+    # allow partial update
+    if "title" in data:
+        recipe.title = (data.get("title") or "").strip() or recipe.title
+    if "category" in data:
+        recipe.category = (data.get("category") or "").strip()
+    if "prepTime" in data:
+        try:
+            recipe.prepTime = int(data.get("prepTime") or 0)
+        except:
+            pass
+    if "image" in data:
+        recipe.image = (data.get("image") or "").strip()
+    if "ingredients" in data:
+        recipe.ingredients = parse_list_field(data.get("ingredients"))
+    if "steps" in data:
+        recipe.steps = parse_list_field(data.get("steps"))
+    if "rating" in data:
+        try:
+            recipe.rating = int(data.get("rating") or 0)
+        except:
+            recipe.rating = 0
 
     db.session.commit()
     return jsonify({"status": "updated"})
 
-# Delete recipe
+
 @app.route("/recipes/<int:rid>", methods=["DELETE"])
 def delete_recipe(rid):
-    r = Recipe.query.get(rid)
-    if not r:
+    recipe = Recipe.query.get(rid)
+    if not recipe:
         return jsonify({"error": "Recipe not found"}), 404
-    
-    db.session.delete(r)
+
+    # optional: delete uploaded file from disk if it was an upload
+    if recipe.image and recipe.image.startswith("/uploads/"):
+        filename = recipe.image.replace("/uploads/", "", 1)
+        path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+        if os.path.exists(path):
+            try:
+                os.remove(path)
+            except:
+                pass
+
+    db.session.delete(recipe)
     db.session.commit()
     return jsonify({"status": "deleted"})
 
-# Like recipe
+
 @app.route("/recipes/<int:rid>/like", methods=["POST"])
 def like_recipe(rid):
-    r = Recipe.query.get(rid)
-    if not r:
+    recipe = Recipe.query.get(rid)
+    if not recipe:
         return jsonify({"error": "Recipe not found"}), 404
 
-    r.likes += 1
+    recipe.likes = (recipe.likes or 0) + 1
     db.session.commit()
-    return jsonify({"status": "liked", "likes": r.likes})
+    return jsonify({"likes": recipe.likes})
 
-# Register user
-@app.route("/register", methods=["POST"])
-def register():
-    data = request.json
-    if User.query.filter_by(username=data["username"]).first():
-        return jsonify({"error": "User exists"}), 400
-    
-    u = User(
-        username=data["username"],
-        password=data["password"],
-        role=data.get("role", "user")
-    )
-    db.session.add(u)
-    db.session.commit()
-    
-    return jsonify({
-        "status": "registered",
-        "user": {"id": u.id, "username": u.username, "role": u.role}
-    })
 
-# Login
-@app.route("/login", methods=["POST"])
-def login():
-    data = request.json
-    u = User.query.filter_by(username=data["username"], password=data["password"]).first()
-    
-    if not u:
-        return jsonify({"error": "Invalid credentials"}), 401
-    
-    return jsonify({
-        "status": "ok",
-        "user": {"id": u.id, "username": u.username, "role": u.role}
-    })
-
-# Test DB
-@app.route("/test-db")
-def test_db():
-    try:
-        result = db.session.execute(db.text("SELECT 1")).scalar()
-        return f"Database connected! Test query result: {result}"
-    except Exception as e:
-        return f"Database connection failed: {e}"
-
-# ---------------- Initialize Tables ----------------
-# ---------------- COMMENTS ------------------------
-
+# ---------------- Comments ------------------------
 @app.route("/comments/<int:recipe_id>", methods=["GET"])
 def get_comments(recipe_id):
     comments = Comment.query.filter_by(recipe_id=recipe_id).all()
-    result = []
+    out = []
     for c in comments:
-        result.append({
+        u = User.query.get(c.user_id)
+        out.append({
             "id": c.id,
-            "user": User.query.get(c.user_id).username,
-            "content": c.content
+            "user": u.username if u else "Unknown",
+            "content": c.content or ""
         })
-    return jsonify(result)
+    return jsonify(out)
+
 
 @app.route("/comments/<int:recipe_id>", methods=["POST"])
 def add_comment(recipe_id):
-    data = request.json
-
+    data = request.get_json(silent=True) or {}
     if not data.get("user_id") or not data.get("content"):
         return jsonify({"error": "Missing fields"}), 400
 
-    c = Comment(
-        user_id=data["user_id"],
+    comment = Comment(
+        user_id=int(data["user_id"]),
         recipe_id=recipe_id,
-        content=data["content"]
+        content=str(data["content"])
     )
-    db.session.add(c)
+    db.session.add(comment)
     db.session.commit()
-
     return jsonify({"status": "ok"})
 
+
+# ---------------- Users --------------------------
+@app.route("/register", methods=["POST"])
+def register():
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or "").strip()
+    password = (data.get("password") or "").strip()
+
+    if not username or not password:
+        return jsonify({"error": "username and password required"}), 400
+
+    if User.query.filter_by(username=username).first():
+        return jsonify({"error": "User exists"}), 400
+
+    user = User(
+        username=username,
+        password=password,
+        role=(data.get("role") or "user")
+    )
+    db.session.add(user)
+    db.session.commit()
+
+    return jsonify({
+        "status": "registered",
+        "user": {"id": user.id, "username": user.username, "role": user.role}
+    })
+
+
+@app.route("/login", methods=["POST"])
+def login():
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or "").strip()
+    password = (data.get("password") or "").strip()
+
+    user = User.query.filter_by(username=username, password=password).first()
+    if not user:
+        return jsonify({"error": "Invalid credentials"}), 401
+
+    return jsonify({
+        "status": "ok",
+        "user": {"id": user.id, "username": user.username, "role": user.role}
+    })
+
+
+# ---------------- Init DB ------------------------
 def init_db():
     with app.app_context():
-        print("Creating tables if they don't exist...")
+        ensure_upload_folder()
         db.create_all()
 
-        if Recipe.query.count() == 0:
-            print("Adding sample recipes...")
 
-            samples = [
-                Recipe(
-                    title="Avocado Toast Supreme",
-                    category="Breakfast",
-                    prepTime=10,
-                    image="https://images.unsplash.com/photo-1541519227354-08fa5d50c44d?w=500",
-                    ingredients=["2 slices bread", "1 avocado", "Salt", "Pepper", "Lemon juice"],
-                    steps=["Toast bread", "Mash avocado", "Spread on toast"],
-                    likes=42,
-                    author="Chef Maria",
-                    rating=4
-                ),
-                Recipe(
-                    title="Quick Pasta Carbonara",
-                    category="Main Course",
-                    prepTime=20,
-                    image="https://images.unsplash.com/photo-1612874742237-6526221588e3?w=500",
-                    ingredients=["400g pasta", "200g bacon", "3 eggs", "Parmesan cheese", "Black pepper"],
-                    steps=["Cook pasta", "Fry bacon", "Mix eggs", "Combine all"],
-                    likes=89,
-                    author="Chef Giovanni",
-                    rating=5
-                ),
-                Recipe(
-                    title="Berry Smoothie Bowl",
-                    category="Breakfast",
-                    prepTime=5,
-                    image="https://images.unsplash.com/photo-1590301157890-4810ed352733?w=500",
-                    ingredients=["1 cup frozen berries", "1 banana", "1/2 cup yogurt", "Granola", "Honey"],
-                    steps=["Blend ingredients", "Add toppings"],
-                    likes=67,
-                    author="Chef Sarah",
-                    rating=4
-                )
-            ]
-
-            for recipe in samples:
-                db.session.add(recipe)
-            db.session.commit()
-            print("Sample recipes added!")
-
-# ---------------- Run Server -----------------------
+# ---------------- Run ----------------------------
 if __name__ == "__main__":
     init_db()
     app.run(debug=True, port=5000)
