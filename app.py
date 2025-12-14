@@ -7,11 +7,9 @@ from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.utils import secure_filename
 
-# ---------------- App Setup ----------------------
 app = Flask(__name__)
 CORS(app)
 
-# ---------------- Database -----------------------
 DATABASE_URL = "postgresql://postgres:2006@127.0.0.1:5432/web_back"
 app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -19,7 +17,6 @@ app.config["SQLALCHEMY_ECHO"] = True
 
 db = SQLAlchemy(app)
 
-# ---------------- Upload Config ------------------
 UPLOAD_FOLDER = os.path.join(app.root_path, "uploads")
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp", "avif"}
 
@@ -46,7 +43,6 @@ def parse_list_field(value):
         return [x.strip() for x in value.replace(",", "\n").split("\n") if x.strip()]
 
 
-# ---------------- Models -------------------------
 class User(db.Model):
     __tablename__ = "users"
     id = db.Column(db.Integer, primary_key=True)
@@ -108,16 +104,12 @@ class Comment(db.Model):
     recipe_id = db.Column(db.Integer, db.ForeignKey("recipes.id"))
     content = db.Column(db.Text)
 
-
-# ---------------- Helpers ------------------------
 def avg_rating(recipe_id):
     rows = Rating.query.filter_by(recipe_id=recipe_id).all()
     if not rows:
         return 0
     return round(sum(r.stars for r in rows) / len(rows), 1)
 
-
-# ---------------- Routes -------------------------
 @app.route("/")
 def home():
     return "Pocket Chef API running"
@@ -201,8 +193,7 @@ def update_or_delete_recipe(rid):
     if not recipe:
         return jsonify({"error": "Recipe not found"}), 404
 
-    # --- SIMPLE AUTH (only author can edit/delete) ---
-    username = request.args.get("username")  # we will pass it from JS
+    username = request.args.get("username") 
     if not username:
         return jsonify({"error": "username is required"}), 400
 
@@ -213,8 +204,6 @@ def update_or_delete_recipe(rid):
     if recipe.author != username and user.role != "admin":
         return jsonify({"error": "Not allowed"}), 403
 
-    # ---------- UPDATE ----------
-        # ---------- UPDATE ----------
     if request.method == "PUT":
         data = request.get_json(silent=True) or {}
 
@@ -228,16 +217,12 @@ def update_or_delete_recipe(rid):
         db.session.commit()
         return jsonify({"status": "updated"})
 
-    # ---------- DELETE ----------
-    # delete child rows first (FK safe)
     Like.query.filter_by(recipe_id=rid).delete(synchronize_session=False)
     Favorite.query.filter_by(recipe_id=rid).delete(synchronize_session=False)
     Rating.query.filter_by(recipe_id=rid).delete(synchronize_session=False)
     Comment.query.filter_by(recipe_id=rid).delete(synchronize_session=False)
 
-    db.session.flush()  # ✅ IMPORTANT
-
-    # delete uploaded image file
+    db.session.flush() 
     if recipe.image and recipe.image.startswith("/uploads/"):
         try:
             filename = recipe.image.replace("/uploads/", "")

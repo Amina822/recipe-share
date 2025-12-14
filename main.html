@@ -10,7 +10,6 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <!-- Navigation -->
   <nav>
     <div class="container">
       <div class="nav-content">
@@ -27,7 +26,6 @@
             <i class="fas fa-home"></i>
           </a>
 
-          <!-- Keep Categories link -->
           <a href="#" class="nav-link" onclick="showCategories()" data-label="Categories">
             <i class="fas fa-th-large"></i>
           </a>
@@ -65,7 +63,6 @@
   <div class="container main-container">
     <div class="main-content">
       <div id="contentArea">
-        <!-- Home View -->
         <div id="homeView" class="content-view active">
           <div class="view-header">
             <div class="view-title">
@@ -82,7 +79,6 @@
           <div class="recipe-grid" id="recipeGrid"></div>
         </div>
 
-        <!-- Categories View -->
         <div id="categoriesView" class="content-view">
           <div class="view-header">
             <div class="view-title">
@@ -94,14 +90,9 @@
           <div class="categories-grid" id="categoriesGrid"></div>
         </div>
 
-        <!-- Favorites View -->
         <div id="favoritesView" class="content-view">
-          <!-- ✅ Removed "Explore Recipes" header/button from Favorites completely -->
-          <!-- (Only keep the grid) -->
           <div class="recipe-grid" id="favoritesGrid"></div>
         </div>
-
-        <!-- My Recipes View -->
         <div id="myRecipesView" class="content-view">
           <div class="view-header">
             <div class="view-title">
@@ -118,7 +109,6 @@
           <div class="recipe-grid" id="myRecipesGrid"></div>
         </div>
 
-        <!-- About View -->
         <div id="aboutView" class="content-view">
           <div class="view-header">
             <div class="view-title">
@@ -168,7 +158,6 @@
     </div>
   </div>
 
-  <!-- Recipe Details Modal -->
   <div class="modal" id="recipeModal">
     <div class="modal-content">
       <div class="modal-header">
@@ -205,8 +194,6 @@
               </div>
             </div>
           </div>
-
-          <!-- Average rating + per-user rating -->
           <div class="rating-badge">
             <div style="display:flex; flex-direction:column; align-items:flex-end; gap:8px;">
               <div style="display:flex; align-items:center; gap:8px;">
@@ -247,8 +234,6 @@
       </div>
     </div>
   </div>
-
-  <!-- Add Recipe Modal -->
   <div class="modal" id="addRecipeModal">
     <div class="modal-content">
       <div class="modal-header">
@@ -371,8 +356,6 @@
       </div>
     </div>
   </div>
-
-  <!-- Login Modal -->
   <div class="modal" id="loginModal">
     <div class="modal-content login-modal">
       <div class="modal-header">
@@ -429,8 +412,6 @@
       </div>
     </div>
   </div>
-
-  <!-- Toast Notification -->
   <div class="toast" id="toast">
     <i class="fas fa-check-circle"></i>
     <div class="toast-message" id="toastMessage"></div>
