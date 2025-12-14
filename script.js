@@ -9,10 +9,14 @@ const DEFAULT_IMAGE =
 
 let currentUser = JSON.parse(localStorage.getItem("currentUser")) || null;
 let recipes = [];
-let likedRecipes = new Set();          // local UI only (not persisted now)
-let favoriteRecipes = new Set();       // persisted
+
+// per-user states (from backend now)
+let likedRecipes = new Set();
+let favoriteRecipes = new Set();
+let ratingsMap = new Map(); // recipeId -> stars you gave (1..5)
+
 let currentRecipeId = null;
-let currentView = 'home';
+let currentView = "home";
 
 /*****************
  * IMAGE URL RESOLVER
@@ -33,25 +37,44 @@ function resolveImageUrl(img) {
  *****************/
 async function fetchRecipes() {
   try {
-    const response = await fetch(`${API_URL}/recipes`);
-    if (!response.ok) throw new Error('Failed to fetch recipes');
-    recipes = await response.json();
-    return recipes;
-  } catch (error) {
-    console.error('Error fetching recipes:', error);
+    const qs = currentUser?.username
+      ? `?username=${encodeURIComponent(currentUser.username)}`
+      : "";
+    const res = await fetch(`${API_URL}/recipes${qs}`);
+    if (!res.ok) throw new Error("Failed to fetch recipes");
+    const data = await res.json();
+    recipes = data;
+    syncUserStateFromRecipes(data);
+    return data;
+  } catch (err) {
+    console.error("fetchRecipes:", err);
     showToast("Error loading recipes", "error");
     return [];
   }
 }
 
-// ✅ Use FormData so you can send URL OR file (backend uses request.form + request.files)
+function syncUserStateFromRecipes(list) {
+  // Backend returns userLiked/userFavorited/userRating if username passed
+  likedRecipes = new Set();
+  favoriteRecipes = new Set();
+  ratingsMap = new Map();
+
+  if (!currentUser) return;
+
+  for (const r of list) {
+    if (r.userLiked) likedRecipes.add(r.id);
+    if (r.userFavorited) favoriteRecipes.add(r.id);
+    if (r.userRating) ratingsMap.set(r.id, r.userRating);
+  }
+}
+
+// ✅ add recipe uses FormData for file/url
 async function addRecipeAPI(formData) {
   const response = await fetch(`${API_URL}/recipes`, {
-    method: 'POST',
+    method: "POST",
     body: formData
   });
 
-  // if server returns error text/json, show it
   if (!response.ok) {
     let msg = "Failed to add recipe";
     try {
@@ -60,14 +83,13 @@ async function addRecipeAPI(formData) {
     } catch (_) {}
     throw new Error(msg);
   }
-
   return await response.json();
 }
 
 async function updateRecipeAPI(recipeId, recipeData) {
   const response = await fetch(`${API_URL}/recipes/${recipeId}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(recipeData)
   });
 
@@ -79,13 +101,12 @@ async function updateRecipeAPI(recipeId, recipeData) {
     } catch (_) {}
     throw new Error(msg);
   }
-
   return await response.json();
 }
 
 async function deleteRecipeAPI(recipeId) {
   const response = await fetch(`${API_URL}/recipes/${recipeId}`, {
-    method: 'DELETE'
+    method: "DELETE"
   });
 
   if (!response.ok) {
@@ -100,162 +121,172 @@ async function deleteRecipeAPI(recipeId) {
   return await response.json();
 }
 
-async function likeRecipeAPI(recipeId) {
+// per-user like toggle
+async function toggleLikeAPI(recipeId) {
   const response = await fetch(`${API_URL}/recipes/${recipeId}/like`, {
-    method: 'POST'
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: currentUser.username })
   });
-
-  if (!response.ok) {
-    let msg = "Failed to like recipe";
-    try {
-      const err = await response.json();
-      msg = err.error || msg;
-    } catch (_) {}
-    throw new Error(msg);
-  }
-
-  return await response.json();
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Failed to toggle like");
+  return data; // {status, likes}
 }
 
-async function registerAPI(userData) {
-  const response = await fetch(`${API_URL}/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(userData)
+// per-user favorite toggle
+async function toggleFavoriteAPI(recipeId) {
+  const response = await fetch(`${API_URL}/recipes/${recipeId}/favorite`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: currentUser.username })
   });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Registration failed');
-  }
-  return await response.json();
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Failed to toggle favorite");
+  return data; // {status: added|removed}
 }
 
-async function loginAPI(credentials) {
-  const response = await fetch(`${API_URL}/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(credentials)
+// per-user rating
+async function rateRecipeAPI(recipeId, stars) {
+  const response = await fetch(`${API_URL}/recipes/${recipeId}/rate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: currentUser.username, stars })
   });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Login failed');
-  }
-  return await response.json();
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Failed to rate");
+  return data; // {avgRating, userRating}
 }
 
 async function fetchComments(recipeId) {
   try {
     const response = await fetch(`${API_URL}/comments/${recipeId}`);
-    if (!response.ok) throw new Error('Failed to fetch comments');
+    if (!response.ok) throw new Error("Failed to fetch comments");
     return await response.json();
   } catch (error) {
-    console.error('Error fetching comments:', error);
+    console.error("fetchComments:", error);
     return [];
   }
 }
 
 async function addCommentAPI(recipeId, commentData) {
   const response = await fetch(`${API_URL}/comments/${recipeId}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(commentData)
   });
 
-  if (!response.ok) throw new Error('Failed to add comment');
+  if (!response.ok) throw new Error("Failed to add comment");
+  return await response.json();
+}
+
+async function registerAPI(userData) {
+  const response = await fetch(`${API_URL}/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(userData)
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || "Registration failed");
+  }
+  return await response.json();
+}
+
+async function loginAPI(credentials) {
+  const response = await fetch(`${API_URL}/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(credentials)
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || "Login failed");
+  }
   return await response.json();
 }
 
 /*****************
  * INITIALIZATION
  *****************/
-document.addEventListener('DOMContentLoaded', () => {
-  const searchInput = document.getElementById('searchInput');
+document.addEventListener("DOMContentLoaded", () => {
+  const searchInput = document.getElementById("searchInput");
   if (searchInput) {
-    searchInput.addEventListener('input', () => {
-      if (currentView === 'home') renderRecipes();
+    searchInput.addEventListener("input", () => {
+      if (currentView === "home") renderRecipes();
+      else rerenderCurrentView();
     });
   }
 
-  document.getElementById('recipeForm')?.addEventListener('submit', submitRecipe);
-  document.getElementById('loginForm')?.addEventListener('submit', handleLogin);
-  document.getElementById('signupForm')?.addEventListener('submit', handleSignup);
+  document.getElementById("recipeForm")?.addEventListener("submit", submitRecipe);
+  document.getElementById("loginForm")?.addEventListener("submit", handleLogin);
+  document.getElementById("signupForm")?.addEventListener("submit", handleSignup);
 
   // Image upload handlers
-  const imageURL = document.getElementById('recipeImageURL');
-  const imageFile = document.getElementById('recipeImageFile');
+  const imageURL = document.getElementById("recipeImageURL");
+  const imageFile = document.getElementById("recipeImageFile");
 
   if (imageURL) {
-    imageURL.addEventListener('input', () => {
+    imageURL.addEventListener("input", () => {
       if (imageURL.value.trim()) {
-        if (imageFile) imageFile.value = '';
-        const fileNameDisplay = document.getElementById('fileNameDisplay');
-        if (fileNameDisplay) fileNameDisplay.textContent = 'Choose image from device';
+        if (imageFile) imageFile.value = "";
+        const fileNameDisplay = document.getElementById("fileNameDisplay");
+        if (fileNameDisplay) fileNameDisplay.textContent = "Choose image from device";
         updateImagePreview(imageURL.value);
       } else {
-        updateImagePreview('');
+        updateImagePreview("");
       }
     });
   }
 
   if (imageFile) {
-    imageFile.addEventListener('change', (e) => {
+    imageFile.addEventListener("change", (e) => {
       if (e.target.files && e.target.files[0]) {
-        if (imageURL) imageURL.value = '';
+        if (imageURL) imageURL.value = "";
         const fileName = e.target.files[0].name;
-        const fileNameDisplay = document.getElementById('fileNameDisplay');
+        const fileNameDisplay = document.getElementById("fileNameDisplay");
         if (fileNameDisplay) fileNameDisplay.textContent = fileName;
 
         const reader = new FileReader();
         reader.onload = (event) => updateImagePreview(event.target.result);
         reader.readAsDataURL(e.target.files[0]);
       } else {
-        const fileNameDisplay = document.getElementById('fileNameDisplay');
-        if (fileNameDisplay) fileNameDisplay.textContent = 'Choose image from device';
+        const fileNameDisplay = document.getElementById("fileNameDisplay");
+        if (fileNameDisplay) fileNameDisplay.textContent = "Choose image from device";
       }
     });
   }
 
   // Modal close on backdrop click
-  document.querySelectorAll('.modal').forEach(modal => {
-    modal.addEventListener('click', function (e) {
+  document.querySelectorAll(".modal").forEach((modal) => {
+    modal.addEventListener("click", function (e) {
       if (e.target === this) {
-        this.classList.remove('active');
-        document.body.style.overflow = 'auto';
+        this.classList.remove("active");
+        document.body.style.overflow = "auto";
       }
     });
   });
 
-  loadFavoritesFromStorage();
-
+  // init
   updateAuthArea();
   loadRecipes();
   showHome();
 });
 
 function updateImagePreview(src) {
-  const preview = document.getElementById('imagePreview');
+  const preview = document.getElementById("imagePreview");
   if (!preview) return;
 
   const finalSrc = resolveImageUrl(src);
 
   if (finalSrc && finalSrc.trim()) {
     preview.innerHTML = `<img src="${finalSrc}" alt="Preview">`;
-    preview.style.display = 'block';
+    preview.style.display = "block";
   } else {
-    preview.innerHTML = '';
-    preview.style.display = 'none';
+    preview.innerHTML = "";
+    preview.style.display = "none";
   }
-}
-
-function loadFavoritesFromStorage() {
-  const stored = JSON.parse(localStorage.getItem('userFavorites') || '[]');
-  favoriteRecipes = new Set(stored);
-}
-
-function saveFavoritesToStorage() {
-  localStorage.setItem('userFavorites', JSON.stringify([...favoriteRecipes]));
 }
 
 /*****************
@@ -304,7 +335,7 @@ function openLoginModal() {
   if (!modal) return;
   modal.classList.add("active");
   document.body.style.overflow = "hidden";
-  switchAuthTab('login');
+  switchAuthTab("login");
 }
 
 function openSignupModal() {
@@ -312,7 +343,7 @@ function openSignupModal() {
   if (!modal) return;
   modal.classList.add("active");
   document.body.style.overflow = "hidden";
-  switchAuthTab('signup');
+  switchAuthTab("signup");
 }
 
 function closeLoginModal() {
@@ -328,15 +359,16 @@ function switchAuthTab(tab) {
   const tabs = document.querySelectorAll(".auth-tab");
   const modalTitle = document.getElementById("loginModalTitle");
 
-  tabs.forEach(t => t.classList.remove("active"));
+  tabs.forEach((t) => t.classList.remove("active"));
 
-  document.querySelectorAll(".auth-tab").forEach(btn => {
+  document.querySelectorAll(".auth-tab").forEach((btn) => {
     const text = btn.textContent.toLowerCase();
-    if (tab === 'login' && text.includes('login')) btn.classList.add("active");
-    if (tab === 'signup' && (text.includes('sign') || text.includes('signup'))) btn.classList.add("active");
+    if (tab === "login" && text.includes("login")) btn.classList.add("active");
+    if (tab === "signup" && (text.includes("sign") || text.includes("signup")))
+      btn.classList.add("active");
   });
 
-  if (tab === 'login') {
+  if (tab === "login") {
     if (loginForm) loginForm.style.display = "block";
     if (signupForm) signupForm.style.display = "none";
     if (modalTitle) modalTitle.textContent = "Login";
@@ -432,6 +464,12 @@ async function handleSignup(event) {
 function logout() {
   localStorage.removeItem("currentUser");
   currentUser = null;
+
+  // reset per-user sets
+  likedRecipes = new Set();
+  favoriteRecipes = new Set();
+  ratingsMap = new Map();
+
   updateAuthArea();
   loadRecipes();
   showToast("Logged out successfully");
@@ -441,18 +479,20 @@ function logout() {
  * VIEW MANAGEMENT
  *****************/
 function showHome() {
-  currentView = 'home';
-  updateNavigation('Home');
-  showView('homeView');
+  currentView = "home";
+  updateNavigation("Home");
+  showView("homeView");
   loadRecipes();
 }
 
+// ✅ Instead of separate categories page, we use it as FILTERS view
 function showCategories() {
-  currentView = 'categories';
-  updateNavigation('Categories');
-  showView('categoriesView');
-  renderCategories();
+  currentView = "categories";
+  updateNavigation("Categories");
+  showView("categoriesView");
+  renderCategories(); // ✅ bring back categories list/cards
 }
+
 
 function showFavorites() {
   if (!currentUser) {
@@ -460,9 +500,9 @@ function showFavorites() {
     openLoginModal();
     return;
   }
-  currentView = 'favorites';
-  updateNavigation('Favorites');
-  showView('favoritesView');
+  currentView = "favorites";
+  updateNavigation("Favorites");
+  showView("favoritesView");
   renderFavorites();
 }
 
@@ -472,143 +512,106 @@ function showMyRecipes() {
     openLoginModal();
     return;
   }
-  currentView = 'myRecipes';
-  updateNavigation('My Recipes');
-  showView('myRecipesView');
+  currentView = "myRecipes";
+  updateNavigation("My Recipes");
+  showView("myRecipesView");
   renderMyRecipes();
 }
 
 function showAbout() {
-  currentView = 'about';
-  updateNavigation('About');
-  showView('aboutView');
+  currentView = "about";
+  updateNavigation("About");
+  showView("aboutView");
 }
 
 function updateNavigation(activeLink) {
-  const navLinks = document.querySelectorAll('.nav-link');
-  navLinks.forEach(link => {
-    link.classList.remove('active');
-    const label = link.getAttribute('data-label');
-    if (label === activeLink) link.classList.add('active');
+  const navLinks = document.querySelectorAll(".nav-link");
+  navLinks.forEach((link) => {
+    link.classList.remove("active");
+    const label = link.getAttribute("data-label");
+    if (label === activeLink) link.classList.add("active");
   });
 }
 
 function showView(viewId) {
-  const views = ['homeView', 'categoriesView', 'favoritesView', 'myRecipesView', 'aboutView'];
-  views.forEach(v => document.getElementById(v)?.classList.remove('active'));
-  document.getElementById(viewId)?.classList.add('active');
+  const views = ["homeView", "categoriesView", "favoritesView", "myRecipesView", "aboutView"];
+  views.forEach((v) => document.getElementById(v)?.classList.remove("active"));
+  document.getElementById(viewId)?.classList.add("active");
 }
-
-// helper: rerender without refetch
 function rerenderCurrentView() {
-  if (currentView === 'home') renderRecipes();
-  else if (currentView === 'categories') renderCategories();
-  else if (currentView === 'favorites') renderFavorites();
-  else if (currentView === 'myRecipes') renderMyRecipes();
+  if (currentView === "home") renderRecipes();
+  else if (currentView === "categories") renderCategories();
+  else if (currentView === "favorites") renderFavorites();
+  else if (currentView === "myRecipes") renderMyRecipes();
 }
 
-/*****************
- * STAR RATING SYSTEM
- *****************/
-function renderStars(rating) {
-  const fullStars = Math.floor(rating);
-  const hasHalfStar = rating % 1 >= 0.5;
-  let stars = '';
 
-  for (let i = 0; i < 5; i++) {
-    if (i < fullStars) stars += '<i class="fas fa-star star"></i>';
-    else if (i === fullStars && hasHalfStar) stars += '<i class="fas fa-star-half-alt star"></i>';
-    else stars += '<i class="far fa-star star empty"></i>';
+/*****************
+ * FILTERS VIEW (replaces categories list)
+ *****************/
+function renderStarsAvg(avg) {
+  const rating = Number(avg || 0);
+  const full = Math.floor(rating);
+  const half = rating - full >= 0.5;
+  let html = "";
+
+  for (let i = 1; i <= 5; i++) {
+    if (i <= full) html += `<i class="fas fa-star star"></i>`;
+    else if (i === full + 1 && half) html += `<i class="fas fa-star-half-alt star"></i>`;
+    else html += `<i class="far fa-star star empty"></i>`;
   }
-
-  return stars;
+  return html;
 }
 
-/*****************
- * CATEGORIES VIEW
- *****************/
-function renderCategories() {
-  const categoriesGrid = document.getElementById('categoriesGrid');
-  if (!categoriesGrid) return;
-
-  const categories = [
-    { id: 'vegetarian', name: 'Vegetarian', icon: 'fas fa-leaf', description: 'Plant-based deliciousness', category: 'Vegetarian' },
-    { id: 'dessert', name: 'Dessert', icon: 'fas fa-ice-cream', description: 'Sweet treats and delights', category: 'Dessert' },
-    { id: 'quick', name: 'Quick Meals', icon: 'fas fa-bolt', description: 'Ready in 30 minutes or less', category: 'Quick' },
-    { id: 'main', name: 'Main Course', icon: 'fas fa-drumstick-bite', description: 'Hearty and satisfying meals', category: 'Main Course' },
-    { id: 'breakfast', name: 'Breakfast', icon: 'fas fa-egg', description: 'Start your day right', category: 'Breakfast' }
-  ];
-
-  categoriesGrid.innerHTML = categories.map(cat => {
-    const count = recipes.filter(r => r.category === cat.category || (cat.id === 'quick' && Number(r.prepTime) <= 30)).length;
-    return `
-      <div class="category-card" onclick="filterByCategory('${cat.category}')">
-        <i class="${cat.icon}"></i>
-        <h3>${cat.name}</h3>
-        <p>${cat.description}</p>
-        <span class="category-count">${count} recipes</span>
-      </div>
+// clickable rating for user
+function renderUserRating(recipeId) {
+  const my = Number(ratingsMap.get(recipeId) || 0);
+  let html = `<div class="rate-box" data-recipe="${recipeId}">`;
+  for (let i = 1; i <= 5; i++) {
+    html += `
+      <button class="rate-star ${i <= my ? "active" : ""}"
+              type="button"
+              aria-label="Rate ${i}"
+              onclick="event.stopPropagation(); setRating(${recipeId}, ${i})">
+        <i class="${i <= my ? "fas" : "far"} fa-star"></i>
+      </button>
     `;
-  }).join('');
+  }
+  html += `</div>`;
+  return html;
 }
 
-function filterByCategory(category) {
-  showHome();
-  setTimeout(() => {
-    const searchInput = document.getElementById('searchInput');
-    if (searchInput) searchInput.value = (category === 'Quick') ? '' : category;
-    renderRecipes();
-  }, 100);
-}
-
-/*****************
- * FAVORITES VIEW
- *****************/
-function renderFavorites() {
-  const favoritesGrid = document.getElementById('favoritesGrid');
-  if (!favoritesGrid) return;
-
-  const list = recipes.filter(r => favoriteRecipes.has(r.id));
-
-  if (list.length === 0) {
-    favoritesGrid.innerHTML = `
-      <div class="empty-state">
-        <i class="fas fa-bookmark"></i>
-        <h3>No favorites yet</h3>
-        <p>Start exploring recipes and save your favorites!</p>
-        <button class="btn-primary" onclick="showHome()">
-          <i class="fas fa-compass"></i>
-          Explore Recipes
-        </button>
-      </div>
-    `;
+async function setRating(recipeId, stars) {
+  if (!currentUser) {
+    showToast("Please login to rate recipes", "error");
+    openLoginModal();
     return;
   }
 
-  favoritesGrid.innerHTML = list.map(createRecipeCard).join('');
-}
+  try {
+    const res = await rateRecipeAPI(recipeId, stars);
+    ratingsMap.set(recipeId, stars);
 
-/*****************
- * MY RECIPES VIEW
- *****************/
-function renderMyRecipes() {
-  const myRecipesGrid = document.getElementById('myRecipesGrid');
-  if (!myRecipesGrid) return;
+    // update recipe avg rating locally
+    const r = recipes.find(x => x.id === recipeId);
+    if (r) {
+      r.rating = res.avgRating;
+      r.userRating = res.userRating;
+    }
 
-  const my = recipes.filter(r => currentUser && r.author === currentUser.username);
+    showToast(`Rated ${stars}★`);
+    rerenderCurrentView();
 
-  if (my.length === 0) {
-    myRecipesGrid.innerHTML = `
-      <div class="empty-state">
-        <i class="fas fa-utensils"></i>
-        <h3>No recipes yet</h3>
-        <p>Share your first recipe with the community!</p>
-      </div>
-    `;
-    return;
+    // if modal open for this recipe, update it
+    if (currentRecipeId === recipeId) {
+      document.getElementById("modalRating").textContent = res.avgRating ?? 0;
+      document.getElementById("modalRatingStars").innerHTML = renderStarsAvg(res.avgRating || 0);
+      document.getElementById("modalUserRate").innerHTML = renderUserRating(recipeId);
+    }
+  } catch (e) {
+    console.error("setRating:", e);
+    showToast(e.message || "Error rating", "error");
   }
-
-  myRecipesGrid.innerHTML = my.map(createRecipeCard).join('');
 }
 
 /*****************
@@ -630,31 +633,33 @@ function createRecipeCard(recipe) {
   return `
     <div class="recipe-card">
       <div class="recipe-image-container">
-        <img src="${imgSrc}" alt="${recipe.title}" class="recipe-image" onclick="showRecipeDetail(${recipe.id})">
+        <img src="${imgSrc}" alt="${escapeHtml(recipe.title || "")}" class="recipe-image" onclick="showRecipeDetail(${recipe.id})">
+
         <div class="recipe-actions">
-          <button class="action-btn save-btn ${isFavorited ? 'saved' : ''}"
+          <button class="action-btn save-btn ${isFavorited ? "saved" : ""}"
                   onclick="event.stopPropagation(); toggleFavorite(${recipe.id}, this)"
                   title="Save">
             <i class="fas fa-bookmark"></i>
           </button>
         </div>
-        <div class="recipe-category">${recipe.category || ''}</div>
-        ${isMyRecipe ? `<div class="recipe-category" style="right:10px; left:auto; background: var(--success); color:#fff;">My Recipe</div>` : ''}
+
+        <div class="recipe-category">${escapeHtml(recipe.category || "")}</div>
+        ${isMyRecipe ? `<div class="recipe-category" style="right:10px; left:auto; background: var(--success); color:#fff;">My Recipe</div>` : ""}
       </div>
 
       <div class="recipe-info">
-        <h3 class="recipe-title" onclick="showRecipeDetail(${recipe.id})">${recipe.title}</h3>
+        <h3 class="recipe-title" onclick="showRecipeDetail(${recipe.id})">${escapeHtml(recipe.title || "")}</h3>
 
         <p class="recipe-author">
           <i class="fas fa-user"></i>
-          by ${recipe.author || 'Unknown'}
+          by ${escapeHtml(recipe.author || "Unknown")}
         </p>
 
         <div class="recipe-meta">
           <div class="recipe-stats">
             <div class="stat-item">
               <i class="fas fa-clock"></i>
-              ${recipe.prepTime ?? ''} min
+              ${recipe.prepTime ?? ""} min
             </div>
             <div class="stat-item">
               <i class="fas fa-heart"></i>
@@ -662,14 +667,19 @@ function createRecipeCard(recipe) {
             </div>
           </div>
 
-          <div class="recipe-rating">
-            <div class="star-rating">${renderStars(recipe.rating || 0)}</div>
-            <span class="rating-value">${recipe.rating || 0}</span>
+          <div class="recipe-rating" title="Average rating">
+            <div class="star-rating">${renderStarsAvg(recipe.rating || 0)}</div>
+            <span class="rating-value">${Number(recipe.rating || 0).toFixed(1)}</span>
           </div>
         </div>
 
+        <div class="user-rate-row">
+          <span class="user-rate-label">Your rating:</span>
+          ${renderUserRating(recipe.id)}
+        </div>
+
         <div class="recipe-actions-bottom">
-          <button class="btn-small like-btn ${isLiked ? 'liked' : ''}"
+          <button class="btn-small like-btn ${isLiked ? "liked" : ""}"
                   onclick="event.stopPropagation(); toggleLike(${recipe.id}, this)">
             <i class="fas fa-heart"></i>
             <span class="like-count">${recipe.likes ?? 0}</span>
@@ -689,7 +699,7 @@ function createRecipeCard(recipe) {
               <i class="fas fa-trash"></i>
               Delete
             </button>
-          ` : ''}
+          ` : ""}
         </div>
       </div>
     </div>
@@ -707,33 +717,158 @@ function renderRecipes() {
       <div class="empty-state">
         <i class="fas fa-search"></i>
         <h3>No recipes found</h3>
-        <p>Try adjusting your search to find what you're looking for.</p>
+        <p>Try adjusting your search or filters.</p>
       </div>
     `;
     return;
   }
 
-  grid.innerHTML = list.map(createRecipeCard).join('');
+  grid.innerHTML = list.map(createRecipeCard).join("");
 }
+function getCategoryIcon(category) {
+  const c = String(category || "").toLowerCase();
+
+  if (c.includes("dessert")) return "fa-ice-cream";
+  if (c.includes("breakfast")) return "fa-mug-hot";
+  if (c.includes("quick")) return "fa-bolt";
+  if (c.includes("vegetarian")) return "fa-leaf";
+  if (c.includes("main")) return "fa-drumstick-bite";
+
+  return "fa-utensils"; // default
+}
+
+function renderCategories() {
+  const grid = document.getElementById("categoriesGrid");
+  if (!grid) return;
+
+  const counts = {};
+  for (const r of recipes) {
+    const cat = (r.category || "").trim();
+    if (!cat) continue;
+    counts[cat] = (counts[cat] || 0) + 1;
+  }
+
+  const categories = Object.keys(counts).sort((a, b) => a.localeCompare(b));
+
+  if (categories.length === 0) {
+    grid.innerHTML = `
+      <div class="empty-state">
+        <i class="fas fa-th-large"></i>
+        <h3>No categories yet</h3>
+        <p>Add some recipes first and categories will appear here.</p>
+      </div>
+    `;
+    return;
+  }
+
+  grid.innerHTML = categories
+    .map((cat) => `
+      <div class="category-card" onclick="openCategory('${escapeHtml(cat)}')">
+        <i class="fas ${getCategoryIcon(cat)}"></i>
+        <h3>${escapeHtml(cat)}</h3>
+        <p>Browse recipes in this category</p>
+        <span class="category-count">${counts[cat]} recipes</span>
+      </div>
+    `)
+    .join("");
+}
+function openCategory(categoryName) {
+  // optional: jump to home and show only this category (simple)
+  currentView = "home";
+  updateNavigation("Home");
+  showView("homeView");
+
+  // simple filter: render only category (without your old filters system)
+  const grid = document.getElementById("recipeGrid");
+  if (!grid) return;
+
+  const list = recipes.filter(r => (r.category || "").trim() === categoryName);
+
+  if (list.length === 0) {
+    grid.innerHTML = `
+      <div class="empty-state">
+        <i class="fas fa-search"></i>
+        <h3>No recipes found</h3>
+        <p>No recipes in ${escapeHtml(categoryName)} yet.</p>
+      </div>
+    `;
+    return;
+  }
+
+  grid.innerHTML = list.map(createRecipeCard).join("");
+}
+
 
 function getFilteredRecipes() {
   let filtered = [...recipes];
+
+  // search text ONLY
   const searchInput = document.getElementById("searchInput");
-  const q = searchInput ? searchInput.value.toLowerCase().trim() : '';
+  const q = searchInput ? searchInput.value.toLowerCase().trim() : "";
 
   if (q) {
-    filtered = filtered.filter(r =>
-      (r.title || '').toLowerCase().includes(q) ||
-      (r.author || '').toLowerCase().includes(q) ||
-      (r.category || '').toLowerCase().includes(q) ||
-      (Array.isArray(r.ingredients) && r.ingredients.some(ing => (ing || '').toLowerCase().includes(q)))
+    filtered = filtered.filter(
+      (r) =>
+        (r.title || "").toLowerCase().includes(q) ||
+        (r.author || "").toLowerCase().includes(q) ||
+        (r.category || "").toLowerCase().includes(q) ||
+        (Array.isArray(r.ingredients) &&
+          r.ingredients.some((ing) => (ing || "").toLowerCase().includes(q)))
     );
   }
-  return filtered;
+
+  return filtered; // ✅ no category/time/sort filtering anymore
+}
+
+
+/*****************
+ * FAVORITES VIEW
+ *****************/
+function renderFavorites() {
+  const favoritesGrid = document.getElementById("favoritesGrid");
+  if (!favoritesGrid) return;
+
+  const list = recipes.filter((r) => favoriteRecipes.has(r.id));
+
+  if (list.length === 0) {
+    favoritesGrid.innerHTML = `
+      <div class="empty-state">
+        <i class="fas fa-bookmark"></i>
+        <h3>No favorites yet</h3>
+        <p>Start exploring recipes and save your favorites!</p>
+      </div>
+    `;
+    return;
+  }
+
+  favoritesGrid.innerHTML = list.map(createRecipeCard).join("");
 }
 
 /*****************
- * LIKE SYSTEM
+ * MY RECIPES VIEW
+ *****************/
+function renderMyRecipes() {
+  const myRecipesGrid = document.getElementById("myRecipesGrid");
+  if (!myRecipesGrid) return;
+
+  const my = recipes.filter((r) => currentUser && r.author === currentUser.username);
+
+  if (my.length === 0) {
+    myRecipesGrid.innerHTML = `
+      <div class="empty-state">
+        <i class="fas fa-utensils"></i>
+        <h3>No recipes yet</h3>
+        <p>Share your first recipe with the community!</p>
+      </div>
+    `;
+    return;
+  }
+
+  myRecipesGrid.innerHTML = my.map(createRecipeCard).join("");
+}
+
+/*****************
+ * LIKE SYSTEM (per-user + animation)
  *****************/
 async function toggleLike(recipeId, button = null) {
   if (!currentUser) {
@@ -742,68 +877,95 @@ async function toggleLike(recipeId, button = null) {
     return;
   }
 
-  const recipe = recipes.find(r => r.id === recipeId);
-  if (!recipe) return;
-
   try {
-    if (likedRecipes.has(recipeId)) {
-      likedRecipes.delete(recipeId);
-      recipe.likes = Math.max(0, (recipe.likes || 0) - 1);
-      showToast("Recipe unliked");
-    } else {
-      const result = await likeRecipeAPI(recipeId);
-      likedRecipes.add(recipeId);
-      recipe.likes = result.likes;
-
-      if (button) {
-        button.classList.add('like-pop');
-        setTimeout(() => button.classList.remove('like-pop'), 350);
-      }
-
-      showToast("Recipe liked!");
+    // animation immediately (optimistic)
+    if (button) {
+      button.classList.add("heart-beat");
+      setTimeout(() => button.classList.remove("heart-beat"), 650);
+      spawnLikeBurst(button);
     }
 
+    const data = await toggleLikeAPI(recipeId);
+
+    // update local sets
+    if (data.status === "liked") likedRecipes.add(recipeId);
+    else likedRecipes.delete(recipeId);
+
+    // update local recipe likes count
+    const r = recipes.find(x => x.id === recipeId);
+    if (r) r.likes = data.likes;
+
+    showToast(`Recipe ${data.status}!`);
     rerenderCurrentView();
+
+    // if modal open, update modal likes too
+    if (currentRecipeId === recipeId) {
+      const el = document.getElementById("modalLikes");
+      if (el) el.textContent = data.likes ?? 0;
+    }
   } catch (error) {
-    showToast("Error updating like", "error");
-    console.error(error);
+    console.error("Like error:", error);
+    showToast(error.message || "Error updating like", "error");
   }
 }
 
+function spawnLikeBurst(button) {
+  // create little hearts that fly up
+  const rect = button.getBoundingClientRect();
+  const burst = document.createElement("div");
+  burst.className = "like-burst";
+  burst.style.left = `${rect.left + rect.width / 2}px`;
+  burst.style.top = `${rect.top + rect.height / 2}px`;
+
+  burst.innerHTML = `
+    <span class="burst-heart">❤</span>
+    <span class="burst-heart">❤</span>
+    <span class="burst-heart">❤</span>
+  `;
+
+  document.body.appendChild(burst);
+  setTimeout(() => burst.remove(), 700);
+}
+
 /*****************
- * FAVORITES SYSTEM (PERSISTED)
+ * FAVORITES SYSTEM (per-user)
  *****************/
-function toggleFavorite(recipeId, button = null) {
+async function toggleFavorite(recipeId, button = null) {
   if (!currentUser) {
     showToast("Please login to save recipes", "error");
     openLoginModal();
     return;
   }
 
-  if (favoriteRecipes.has(recipeId)) {
-    favoriteRecipes.delete(recipeId);
-    showToast("Removed from favorites");
-  } else {
-    favoriteRecipes.add(recipeId);
-    showToast("Added to favorites!");
+  try {
+    const data = await toggleFavoriteAPI(recipeId);
+
+    if (data.status === "added") {
+      favoriteRecipes.add(recipeId);
+      showToast("Added to favorites!");
+    } else {
+      favoriteRecipes.delete(recipeId);
+      showToast("Removed from favorites");
+    }
+
+    if (button) {
+      button.classList.toggle("saved", favoriteRecipes.has(recipeId));
+      button.classList.add("bookmark-pop");
+      setTimeout(() => button.classList.remove("bookmark-pop"), 300);
+    }
+
+    rerenderCurrentView();
+  } catch (e) {
+    console.error("toggleFavorite:", e);
+    showToast(e.message || "Error updating favorite", "error");
   }
-
-  saveFavoritesToStorage();
-
-  if (button) {
-    button.classList.toggle('saved', favoriteRecipes.has(recipeId));
-    button.classList.add('bookmark-pop');
-    setTimeout(() => button.classList.remove('bookmark-pop'), 300);
-  }
-
-  rerenderCurrentView();
 }
 
 /*****************
  * RECIPE DETAIL MODAL
  *****************/
 async function showRecipeDetail(id) {
-  const recipe = recipes.find(r => r.id === id);
+  const recipe = recipes.find((r) => r.id === id);
   if (!recipe) {
     showToast("Recipe not found", "error");
     return;
@@ -812,29 +974,32 @@ async function showRecipeDetail(id) {
   currentRecipeId = id;
 
   const modalImg = resolveImageUrl(recipe.image) || DEFAULT_IMAGE;
-  document.getElementById('modalImage').src = modalImg;
+  document.getElementById("modalImage").src = modalImg;
 
-  document.getElementById('modalTitle').textContent = recipe.title || '';
-  document.getElementById('modalAuthor').textContent = 'by ' + (recipe.author || '');
-  document.getElementById('modalTime').textContent = (recipe.prepTime ?? '') + ' min';
-  document.getElementById('modalCategory').textContent = recipe.category || '';
-  document.getElementById('modalLikes').textContent = recipe.likes ?? 0;
-  document.getElementById('modalRating').textContent = recipe.rating ?? 0;
-  document.getElementById('modalDifficulty').textContent = recipe.difficulty || 'Medium';
+  document.getElementById("modalTitle").textContent = recipe.title || "";
+  document.getElementById("modalAuthor").textContent = "by " + (recipe.author || "");
+  document.getElementById("modalTime").textContent = (recipe.prepTime ?? "") + " min";
+  document.getElementById("modalCategory").textContent = recipe.category || "";
+  document.getElementById("modalLikes").textContent = recipe.likes ?? 0;
 
-  const ingredientsList = document.getElementById('modalIngredients');
+  document.getElementById("modalRating").textContent = Number(recipe.rating || 0).toFixed(1);
+  document.getElementById("modalRatingStars").innerHTML = renderStarsAvg(recipe.rating || 0);
+
+  // ✅ Add user rate UI in modal (you need a div with id="modalUserRate" in HTML)
+  const modalUserRate = document.getElementById("modalUserRate");
+  if (modalUserRate) modalUserRate.innerHTML = renderUserRating(recipe.id);
+
+  const ingredientsList = document.getElementById("modalIngredients");
   ingredientsList.innerHTML = Array.isArray(recipe.ingredients)
-    ? recipe.ingredients.map(ing => `<li>${ing}</li>`).join('')
-    : '';
+    ? recipe.ingredients.map((ing) => `<li>${escapeHtml(ing)}</li>`).join("")
+    : "";
 
-  const stepsList = document.getElementById('modalSteps');
+  const stepsList = document.getElementById("modalSteps");
   stepsList.innerHTML = Array.isArray(recipe.steps)
-    ? recipe.steps.map(step => `<li>${step}</li>`).join('')
-    : '';
+    ? recipe.steps.map((step) => `<li>${escapeHtml(step)}</li>`).join("")
+    : "";
 
-  document.getElementById('modalRatingStars').innerHTML = renderStars(recipe.rating || 0);
-
-  const commentFormContainer = document.getElementById('commentFormContainer');
+  const commentFormContainer = document.getElementById("commentFormContainer");
   if (currentUser) {
     commentFormContainer.innerHTML = `
       <div class="comment-form">
@@ -858,12 +1023,12 @@ async function showRecipeDetail(id) {
 
   await loadComments(id);
 
-  document.getElementById('recipeModal')?.classList.add('active');
-  document.body.style.overflow = 'hidden';
+  document.getElementById("recipeModal")?.classList.add("active");
+  document.body.style.overflow = "hidden";
 }
 
 async function loadComments(recipeId) {
-  const container = document.getElementById('commentsContainer');
+  const container = document.getElementById("commentsContainer");
   if (!container) return;
 
   container.innerHTML = `<p style="color: var(--gray-light); text-align:center; padding:20px;">Loading comments...</p>`;
@@ -876,17 +1041,21 @@ async function loadComments(recipeId) {
       return;
     }
 
-    container.innerHTML = comments.map(comment => `
+    container.innerHTML = comments
+      .map(
+        (comment) => `
       <div class="comment">
-        <div class="avatar">${(comment.user || 'U').charAt(0).toUpperCase()}</div>
+        <div class="avatar">${escapeHtml((comment.user || "U").charAt(0).toUpperCase())}</div>
         <div class="comment-content">
           <div class="comment-header">
-            <div class="comment-author">${comment.user || 'Unknown'}</div>
+            <div class="comment-author">${escapeHtml(comment.user || "Unknown")}</div>
           </div>
-          <div class="comment-text">${comment.content || ''}</div>
+          <div class="comment-text">${escapeHtml(comment.content || "")}</div>
         </div>
       </div>
-    `).join('');
+    `
+      )
+      .join("");
   } catch (error) {
     container.innerHTML = `<p style="color: var(--gray-light); text-align:center; padding:20px;">Error loading comments</p>`;
   }
@@ -899,12 +1068,12 @@ async function addComment() {
     return;
   }
 
-  const commentInput = document.getElementById('commentInput');
+  const commentInput = document.getElementById("commentInput");
   if (!commentInput) return;
 
   const commentText = commentInput.value.trim();
   if (!commentText) {
-    showToast('Please enter a comment', 'error');
+    showToast("Please enter a comment", "error");
     return;
   }
 
@@ -916,17 +1085,17 @@ async function addComment() {
       content: commentText
     });
 
-    commentInput.value = '';
+    commentInput.value = "";
     await loadComments(currentRecipeId);
-    showToast('Comment added successfully');
+    showToast("Comment added successfully");
   } catch (error) {
-    showToast('Error adding comment', 'error');
+    showToast("Error adding comment", "error");
   }
 }
 
 function closeModal() {
-  document.getElementById('recipeModal')?.classList.remove('active');
-  document.body.style.overflow = 'auto';
+  document.getElementById("recipeModal")?.classList.remove("active");
+  document.body.style.overflow = "auto";
   currentRecipeId = null;
 }
 
@@ -934,16 +1103,16 @@ function closeModal() {
  * SHARE FUNCTION
  *****************/
 function shareRecipe(id) {
-  const recipe = recipes.find(r => r.id === id);
+  const recipe = recipes.find((r) => r.id === id);
   if (!recipe) return;
 
   const shareText = `Check out this recipe: ${recipe.title} on Pocket Chef`;
-  const shareUrl = `${window.location.href.split('#')[0]}#recipe-${id}`;
+  const shareUrl = `${window.location.href.split("#")[0]}#recipe-${id}`;
 
   const shareButtons = document.querySelectorAll(`[onclick*="shareRecipe(${id})"]`);
-  shareButtons.forEach(btn => {
-    btn.style.transform = 'scale(1.08)';
-    setTimeout(() => (btn.style.transform = 'scale(1)'), 250);
+  shareButtons.forEach((btn) => {
+    btn.style.transform = "scale(1.08)";
+    setTimeout(() => (btn.style.transform = "scale(1)"), 250);
   });
 
   if (navigator.share) {
@@ -957,11 +1126,11 @@ function shareRecipe(id) {
     navigator.clipboard?.writeText(copyText).then(() => {
       showToast("Link copied to clipboard!");
     }).catch(() => {
-      const textArea = document.createElement('textarea');
+      const textArea = document.createElement("textarea");
       textArea.value = copyText;
       document.body.appendChild(textArea);
       textArea.select();
-      document.execCommand('copy');
+      document.execCommand("copy");
       document.body.removeChild(textArea);
       showToast("Link copied to clipboard!");
     });
@@ -977,32 +1146,32 @@ function showAddRecipeModal() {
     openLoginModal();
     return;
   }
-  document.getElementById('addRecipeModal')?.classList.add('active');
-  document.body.style.overflow = 'hidden';
-  const titleEl = document.querySelector('.modal-title');
-  if (titleEl) titleEl.textContent = 'Share Your Recipe';
+  document.getElementById("addRecipeModal")?.classList.add("active");
+  document.body.style.overflow = "hidden";
+  const titleEl = document.querySelector(".modal-title");
+  if (titleEl) titleEl.textContent = "Share Your Recipe";
 }
 
 function closeAddRecipeModal() {
-  document.getElementById('addRecipeModal')?.classList.remove('active');
-  document.body.style.overflow = 'auto';
+  document.getElementById("addRecipeModal")?.classList.remove("active");
+  document.body.style.overflow = "auto";
 
-  const form = document.getElementById('recipeForm');
+  const form = document.getElementById("recipeForm");
   if (form) {
     form.reset();
     delete form.dataset.editId;
   }
 
-  const fileNameDisplay = document.getElementById('fileNameDisplay');
-  if (fileNameDisplay) fileNameDisplay.textContent = 'Choose image from device';
+  const fileNameDisplay = document.getElementById("fileNameDisplay");
+  if (fileNameDisplay) fileNameDisplay.textContent = "Choose image from device";
 
-  updateImagePreview('');
+  updateImagePreview("");
   resetFormFields();
 }
 
 function resetFormFields() {
-  const ing = document.getElementById('ingredientsContainer');
-  const inst = document.getElementById('instructionsContainer');
+  const ing = document.getElementById("ingredientsContainer");
+  const inst = document.getElementById("instructionsContainer");
 
   if (ing) {
     ing.innerHTML = `
@@ -1028,11 +1197,11 @@ function resetFormFields() {
 }
 
 function addIngredientField() {
-  const container = document.getElementById('ingredientsContainer');
+  const container = document.getElementById("ingredientsContainer");
   if (!container) return;
 
-  const div = document.createElement('div');
-  div.className = 'ingredient-row';
+  const div = document.createElement("div");
+  div.className = "ingredient-row";
   div.innerHTML = `
     <input type="text" class="ingredient-input" placeholder="e.g., 2 cups all-purpose flour">
     <button type="button" class="remove-btn" onclick="removeIngredient(this)">
@@ -1043,16 +1212,16 @@ function addIngredientField() {
 }
 
 function removeIngredient(button) {
-  const rows = document.querySelectorAll('.ingredient-row');
+  const rows = document.querySelectorAll(".ingredient-row");
   if (rows.length > 1) button.parentElement.remove();
 }
 
 function addInstructionField() {
-  const container = document.getElementById('instructionsContainer');
+  const container = document.getElementById("instructionsContainer");
   if (!container) return;
 
-  const div = document.createElement('div');
-  div.className = 'instruction-row';
+  const div = document.createElement("div");
+  div.className = "instruction-row";
   div.innerHTML = `
     <textarea class="instruction-input" placeholder="e.g., Preheat oven to 350°F" rows="2"></textarea>
     <button type="button" class="remove-btn" onclick="removeInstruction(this)">
@@ -1063,7 +1232,7 @@ function addInstructionField() {
 }
 
 function removeInstruction(button) {
-  const rows = document.querySelectorAll('.instruction-row');
+  const rows = document.querySelectorAll(".instruction-row");
   if (rows.length > 1) button.parentElement.remove();
 }
 
@@ -1071,26 +1240,25 @@ function removeInstruction(button) {
 async function submitRecipe(event) {
   event.preventDefault();
 
-  const title = document.getElementById('recipeTitle')?.value.trim();
-  const category = document.getElementById('recipeCategory')?.value;
-  const prepTime = document.getElementById('recipeTime')?.value;
-  const difficulty = document.getElementById('recipeDifficulty')?.value || 'Medium';
+  const title = document.getElementById("recipeTitle")?.value.trim();
+  const category = document.getElementById("recipeCategory")?.value;
+  const prepTime = document.getElementById("recipeTime")?.value;
 
-  const imageURL = document.getElementById('recipeImageURL')?.value.trim() || '';
-  const imageFile = document.getElementById('recipeImageFile')?.files?.[0] || null;
+  const imageURL = document.getElementById("recipeImageURL")?.value.trim() || "";
+  const imageFile = document.getElementById("recipeImageFile")?.files?.[0] || null;
 
-  const ingredients = Array.from(document.querySelectorAll('.ingredient-input'))
-    .map(i => i.value.trim()).filter(Boolean);
+  const ingredients = Array.from(document.querySelectorAll(".ingredient-input"))
+    .map((i) => i.value.trim()).filter(Boolean);
 
-  const steps = Array.from(document.querySelectorAll('.instruction-input'))
-    .map(i => i.value.trim()).filter(Boolean);
+  const steps = Array.from(document.querySelectorAll(".instruction-input"))
+    .map((i) => i.value.trim()).filter(Boolean);
 
   if (!title || !category || !prepTime || ingredients.length === 0 || steps.length === 0) {
-    showToast('Please fill all required fields', 'error');
+    showToast("Please fill all required fields", "error");
     return;
   }
 
-  const form = document.getElementById('recipeForm');
+  const form = document.getElementById("recipeForm");
   const editId = form?.dataset?.editId;
 
   try {
@@ -1099,16 +1267,14 @@ async function submitRecipe(event) {
         title,
         category,
         prepTime: parseInt(prepTime, 10),
-        image: imageURL || (recipes.find(r => r.id === Number(editId))?.image || ''),
+        image: imageURL || (recipes.find((r) => r.id === Number(editId))?.image || ""),
         ingredients,
         steps,
-        author: currentUser.username,
-        rating: 0,
-        difficulty
+        author: currentUser.username
       };
 
       await updateRecipeAPI(Number(editId), recipeData);
-      showToast('Recipe updated successfully!');
+      showToast("Recipe updated successfully!");
     } else {
       const formData = new FormData();
       formData.append("title", title);
@@ -1116,25 +1282,23 @@ async function submitRecipe(event) {
       formData.append("prepTime", String(parseInt(prepTime, 10)));
       formData.append("ingredients", JSON.stringify(ingredients));
       formData.append("steps", JSON.stringify(steps));
-      formData.append("likes", "0");
       formData.append("author", currentUser.username);
-      formData.append("rating", "0");
 
       if (imageFile) {
-        formData.append("image", imageFile); // MUST be "image"
+        formData.append("image", imageFile);
       } else if (imageURL) {
         formData.append("image", imageURL);
       }
 
       await addRecipeAPI(formData);
-      showToast('Recipe added successfully!');
+      showToast("Recipe added successfully!");
     }
 
     closeAddRecipeModal();
     await loadRecipes();
   } catch (error) {
     console.error(error);
-    showToast(error.message || 'Error saving recipe. Please try again.', 'error');
+    showToast(error.message || "Error saving recipe. Please try again.", "error");
   }
 }
 
@@ -1142,30 +1306,28 @@ async function submitRecipe(event) {
  * EDIT / DELETE
  *****************/
 function editRecipe(id) {
-  const recipe = recipes.find(r => r.id === id);
+  const recipe = recipes.find((r) => r.id === id);
   if (!recipe) return;
 
-  document.getElementById('recipeTitle').value = recipe.title || '';
-  document.getElementById('recipeCategory').value = recipe.category || '';
-  document.getElementById('recipeTime').value = recipe.prepTime ?? '';
-  document.getElementById('recipeDifficulty').value = recipe.difficulty || 'Medium';
+  document.getElementById("recipeTitle").value = recipe.title || "";
+  document.getElementById("recipeCategory").value = recipe.category || "";
+  document.getElementById("recipeTime").value = recipe.prepTime ?? "";
 
-  // IMPORTANT: show full URL in input preview if it is /uploads/...
   const fullImg = resolveImageUrl(recipe.image);
-  document.getElementById('recipeImageURL').value = fullImg || '';
-  updateImagePreview(fullImg || '');
+  document.getElementById("recipeImageURL").value = fullImg || "";
+  updateImagePreview(fullImg || "");
 
-  const ingredientsContainer = document.getElementById('ingredientsContainer');
-  const instructionsContainer = document.getElementById('instructionsContainer');
+  const ingredientsContainer = document.getElementById("ingredientsContainer");
+  const instructionsContainer = document.getElementById("instructionsContainer");
 
-  if (ingredientsContainer) ingredientsContainer.innerHTML = '';
-  if (instructionsContainer) instructionsContainer.innerHTML = '';
+  if (ingredientsContainer) ingredientsContainer.innerHTML = "";
+  if (instructionsContainer) instructionsContainer.innerHTML = "";
 
   (recipe.ingredients || []).forEach((ingredient) => {
-    const div = document.createElement('div');
-    div.className = 'ingredient-row';
+    const div = document.createElement("div");
+    div.className = "ingredient-row";
     div.innerHTML = `
-      <input type="text" class="ingredient-input" value="${ingredient}">
+      <input type="text" class="ingredient-input" value="${escapeHtml(ingredient)}">
       <button type="button" class="remove-btn" onclick="removeIngredient(this)">
         <i class="fas fa-times"></i>
       </button>
@@ -1174,10 +1336,10 @@ function editRecipe(id) {
   });
 
   (recipe.steps || []).forEach((step) => {
-    const div = document.createElement('div');
-    div.className = 'instruction-row';
+    const div = document.createElement("div");
+    div.className = "instruction-row";
     div.innerHTML = `
-      <textarea class="instruction-input" rows="2">${step}</textarea>
+      <textarea class="instruction-input" rows="2">${escapeHtml(step)}</textarea>
       <button type="button" class="remove-btn" onclick="removeInstruction(this)">
         <i class="fas fa-times"></i>
       </button>
@@ -1185,60 +1347,72 @@ function editRecipe(id) {
     instructionsContainer.appendChild(div);
   });
 
-  const form = document.getElementById('recipeForm');
+  const form = document.getElementById("recipeForm");
   form.dataset.editId = id;
 
   showAddRecipeModal();
-  const titleEl = document.querySelector('.modal-title');
-  if (titleEl) titleEl.textContent = 'Edit Recipe';
+  const titleEl = document.querySelector(".modal-title");
+  if (titleEl) titleEl.textContent = "Edit Recipe";
 }
 
 async function deleteRecipe(id) {
-  if (!confirm('Are you sure you want to delete this recipe?')) return;
+  if (!confirm("Are you sure you want to delete this recipe?")) return;
 
   try {
     await deleteRecipeAPI(id);
 
-    if (favoriteRecipes.has(id)) {
-      favoriteRecipes.delete(id);
-      saveFavoritesToStorage();
-    }
+    // also clear local sets
+    likedRecipes.delete(id);
+    favoriteRecipes.delete(id);
+    ratingsMap.delete(id);
 
     await loadRecipes();
-    showToast('Recipe deleted successfully!');
+    showToast("Recipe deleted successfully!");
   } catch (error) {
     console.error(error);
-    showToast('Error deleting recipe. Please try again.', 'error');
+    showToast("Error deleting recipe. Please try again.", "error");
   }
 }
 
 /*****************
  * TOAST NOTIFICATION
  *****************/
-function showToast(message, type = 'success') {
-  const toast = document.getElementById('toast');
-  const toastMessage = document.getElementById('toastMessage');
+function showToast(message, type = "success") {
+  const toast = document.getElementById("toast");
+  const toastMessage = document.getElementById("toastMessage");
   if (!toast || !toastMessage) return;
 
   toastMessage.textContent = message;
 
-  const icon = toast.querySelector('i');
+  const icon = toast.querySelector("i");
   if (icon) {
-    if (type === 'error') {
-      icon.className = 'fas fa-exclamation-circle';
-      icon.style.color = 'var(--error)';
+    if (type === "error") {
+      icon.className = "fas fa-exclamation-circle";
+      icon.style.color = "var(--error)";
     } else {
-      icon.className = 'fas fa-check-circle';
-      icon.style.color = 'var(--success)';
+      icon.className = "fas fa-check-circle";
+      icon.style.color = "var(--success)";
     }
   }
 
-  toast.classList.add('show');
+  toast.classList.add("show");
   setTimeout(hideToast, 4000);
 }
 
 function hideToast() {
-  const toast = document.getElementById('toast');
+  const toast = document.getElementById("toast");
   if (!toast) return;
-  toast.classList.remove('show');
+  toast.classList.remove("show");
+}
+
+/*****************
+ * Utils
+ *****************/
+function escapeHtml(str) {
+  return String(str ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }

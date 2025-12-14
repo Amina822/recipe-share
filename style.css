@@ -1,3 +1,10 @@
+/* =============================
+   Pocket Chef — WORKING CSS (NO FILTERS)
+   ✅ filters removed completely
+   ✅ categories part kept like before
+   ✅ "Explore Recipes" button smaller
+   ============================= */
+
 * {
     margin: 0;
     padding: 0;
@@ -42,7 +49,10 @@ body {
     min-height: calc(100vh - 80px);
 }
 
-/* Navigation */
+/* =============================
+   Navigation
+   ============================= */
+
 nav {
     background: rgba(255, 255, 255, 0.98);
     backdrop-filter: blur(10px);
@@ -197,7 +207,10 @@ nav {
     align-items: center;
 }
 
-/* Auth Area Styles */
+/* =============================
+   Auth Area Styles
+   ============================= */
+
 .auth-buttons {
     display: flex;
     gap: 8px;
@@ -303,16 +316,17 @@ nav {
     background: rgba(230, 57, 70, 0.05);
 }
 
-/* Main Content */
+/* =============================
+   Main Content + Views
+   ============================= */
+
 .main-content {
     flex: 1;
 }
 
-/* Content Views */
 .content-view {
     display: none;
 }
-
 .content-view.active {
     display: block;
 }
@@ -341,6 +355,15 @@ nav {
     font-size: 14px;
 }
 
+/* ✅ Smaller button ONLY for Explore Recipes header buttons */
+#homeView .view-header .btn-primary,
+#myRecipesView .view-header .btn-primary {
+    padding: 8px 14px;          /* smaller */
+    font-size: 13px;            /* smaller text */
+    border-radius: 14px;        /* slightly smaller radius */
+    gap: 6px;
+}
+
 .btn-primary {
     padding: 10px 20px;
     background: var(--primary);
@@ -363,7 +386,10 @@ nav {
     box-shadow: 0 4px 12px rgba(217, 119, 87, 0.2);
 }
 
-/* Categories Grid */
+/* =============================
+   Categories Grid (BACK AS IT WAS)
+   ============================= */
+
 .categories-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -418,7 +444,10 @@ nav {
     font-weight: 600;
 }
 
-/* About View */
+/* =============================
+   About View
+   ============================= */
+
 .about-content {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -489,7 +518,10 @@ nav {
     font-weight: bold;
 }
 
-/* Recipe Grid */
+/* =============================
+   Recipe Grid
+   ============================= */
+
 .recipe-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -596,6 +628,9 @@ nav {
     -webkit-box-orient: vertical;
     overflow: hidden;
     min-height: 44px;
+
+    /* standard property for your VS Code warning */
+    line-clamp: 2;
 }
 
 .recipe-card:hover .recipe-title {
@@ -761,7 +796,10 @@ nav {
     margin: 0 auto;
 }
 
-/* Modal */
+/* =============================
+   Modal
+   ============================= */
+
 .modal {
     display: none;
     position: fixed;
@@ -796,14 +834,8 @@ nav {
 }
 
 @keyframes slideUp {
-    from {
-        opacity: 0;
-        transform: translateY(20px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 .modal-header {
@@ -1128,10 +1160,6 @@ nav {
     box-shadow: 0 2px 8px rgba(217, 119, 87, 0.2);
 }
 
-.auth-form {
-    display: block;
-}
-
 .auth-form .form-group {
     margin-bottom: 16px;
 }
@@ -1418,42 +1446,42 @@ nav {
         flex-wrap: wrap;
         gap: 12px;
     }
-    
+
     .nav-links {
         order: 3;
         width: 100%;
         justify-content: center;
         margin-top: 8px;
     }
-    
+
     .nav-right {
         width: 100%;
         justify-content: space-between;
     }
-    
+
     .search-bar {
         max-width: 100%;
     }
-    
+
     .recipe-grid {
         grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
         gap: 16px;
     }
-    
+
     .categories-grid {
         grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
     }
-    
+
     .form-row {
         grid-template-columns: 1fr;
     }
-    
+
     .view-header {
         flex-direction: column;
         gap: 16px;
         text-align: center;
     }
-    
+
     .auth-buttons {
         flex-wrap: wrap;
         justify-content: center;
@@ -1465,37 +1493,37 @@ nav {
     .categories-grid {
         grid-template-columns: 1fr;
     }
-    
+
     .modal-content {
         max-height: 95vh;
         margin: 10px;
     }
-    
+
     .modal-body {
         padding: 16px;
     }
-    
+
     .modal-recipe-title {
         font-size: 20px;
     }
-    
+
     .form-actions {
         flex-direction: column;
     }
-    
+
     .btn-primary,
     .btn-secondary {
         width: 100%;
         justify-content: center;
     }
-    
+
     .user-info {
         flex-wrap: wrap;
         justify-content: center;
         text-align: center;
         gap: 8px;
     }
-    
+
     .user-avatar {
         width: 32px;
         height: 32px;
