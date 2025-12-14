@@ -87,11 +87,14 @@ async function addRecipeAPI(formData) {
 }
 
 async function updateRecipeAPI(recipeId, recipeData) {
-  const response = await fetch(`${API_URL}/recipes/${recipeId}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(recipeData)
-  });
+  const response = await fetch(
+    `${API_URL}/recipes/${recipeId}?username=${encodeURIComponent(currentUser.username)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(recipeData)
+    }
+  );
 
   if (!response.ok) {
     let msg = "Failed to update recipe";
@@ -105,9 +108,10 @@ async function updateRecipeAPI(recipeId, recipeData) {
 }
 
 async function deleteRecipeAPI(recipeId) {
-  const response = await fetch(`${API_URL}/recipes/${recipeId}`, {
-    method: "DELETE"
-  });
+  const response = await fetch(
+    `${API_URL}/recipes/${recipeId}?username=${encodeURIComponent(currentUser.username)}`,
+    { method: "DELETE" }
+  );
 
   if (!response.ok) {
     let msg = "Failed to delete recipe";
@@ -117,11 +121,9 @@ async function deleteRecipeAPI(recipeId) {
     } catch (_) {}
     throw new Error(msg);
   }
-
   return await response.json();
 }
 
-// per-user like toggle
 async function toggleLikeAPI(recipeId) {
   const response = await fetch(`${API_URL}/recipes/${recipeId}/like`, {
     method: "POST",

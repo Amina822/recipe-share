@@ -195,7 +195,62 @@ def add_recipe():
     db.session.add(recipe)
     db.session.commit()
     return jsonify({"status": "ok"}), 201
+@app.route("/recipes/<int:rid>", methods=["PUT", "DELETE"])
+def update_or_delete_recipe(rid):
+    recipe = Recipe.query.get(rid)
+    if not recipe:
+        return jsonify({"error": "Recipe not found"}), 404
 
+    # --- SIMPLE AUTH (only author can edit/delete) ---
+    username = request.args.get("username")  # we will pass it from JS
+    if not username:
+        return jsonify({"error": "username is required"}), 400
+
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    if recipe.author != username and user.role != "admin":
+        return jsonify({"error": "Not allowed"}), 403
+
+    # ---------- UPDATE ----------
+        # ---------- UPDATE ----------
+    if request.method == "PUT":
+        data = request.get_json(silent=True) or {}
+
+        recipe.title = data.get("title", recipe.title)
+        recipe.category = data.get("category", recipe.category)
+        recipe.prepTime = int(data.get("prepTime", recipe.prepTime or 0))
+        recipe.image = data.get("image", recipe.image)
+        recipe.ingredients = data.get("ingredients", recipe.ingredients or [])
+        recipe.steps = data.get("steps", recipe.steps or [])
+
+        db.session.commit()
+        return jsonify({"status": "updated"})
+
+    # ---------- DELETE ----------
+    # delete child rows first (FK safe)
+    Like.query.filter_by(recipe_id=rid).delete(synchronize_session=False)
+    Favorite.query.filter_by(recipe_id=rid).delete(synchronize_session=False)
+    Rating.query.filter_by(recipe_id=rid).delete(synchronize_session=False)
+    Comment.query.filter_by(recipe_id=rid).delete(synchronize_session=False)
+
+    db.session.flush()  # ✅ IMPORTANT
+
+    # delete uploaded image file
+    if recipe.image and recipe.image.startswith("/uploads/"):
+        try:
+            filename = recipe.image.replace("/uploads/", "")
+            path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception as e:
+            print("Image delete warning:", e)
+
+    db.session.delete(recipe)
+    db.session.commit()
+
+    return jsonify({"status": "deleted"})
 
 @app.route("/recipes/<int:rid>/like", methods=["POST"])
 def toggle_like(rid):
