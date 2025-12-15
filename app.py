@@ -103,6 +103,7 @@ class Comment(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     recipe_id = db.Column(db.Integer, db.ForeignKey("recipes.id"))
     content = db.Column(db.Text)
+    user = db.relationship("User", lazy="joined")
 
 def avg_rating(recipe_id):
     rows = Rating.query.filter_by(recipe_id=recipe_id).all()
@@ -317,6 +318,54 @@ def login():
     if not user:
         return jsonify({"error": "Invalid credentials"}), 401
     return jsonify({"user": {"id": user.id, "username": user.username}})
+@app.route("/comments/<int:rid>", methods=["GET"])
+def get_comments(rid):
+    comments = Comment.query.filter_by(recipe_id=rid).order_by(Comment.id.desc()).all()
+
+    return jsonify([
+        {
+            "id": c.id,
+            "user_id": c.user_id,
+            "recipe_id": c.recipe_id,
+            "user": c.user.username if c.user else "",
+            "content": c.content or ""
+        }
+        for c in comments
+    ])
+
+
+@app.route("/comments/<int:rid>", methods=["POST"])
+def add_comment(rid):
+    data = request.get_json(silent=True) or {}
+
+    user_id = data.get("user_id")
+    content = (data.get("content") or "").strip()
+
+    if not user_id:
+        return jsonify({"error": "user_id is required"}), 400
+    if not content:
+        return jsonify({"error": "content is required"}), 400
+
+    # optional validation
+    user = User.query.get(int(user_id))
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    recipe = Recipe.query.get(rid)
+    if not recipe:
+        return jsonify({"error": "Recipe not found"}), 404
+
+    c = Comment(user_id=int(user_id), recipe_id=rid, content=content)
+    db.session.add(c)
+    db.session.commit()
+
+    return jsonify({
+        "status": "ok",
+        "id": c.id,
+        "user": user.username,
+        "content": c.content
+    }), 201
+
 
 
 def init_db():
